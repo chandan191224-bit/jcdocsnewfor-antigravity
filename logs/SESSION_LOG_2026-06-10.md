@@ -39,4 +39,13 @@ Added font size and font family detection in `onTextFieldValueChange` callback (
 
 ### Follow-up — Active formatting indicators + crash fix
 - **Active formatting indicators** — added `derivedStateOf` blocks (`activeFormatting`, `cursorFontColorVal`, `cursorHighlightColorVal`) that detect formatting spans at cursor position. Each button's `isSelected` reflects whether that formatting type is active at the cursor. Font Color "A" icon dynamically shows the applied color; Highlight icon tint reflects active highlight.
-- **Crash fix** — `StringIndexOutOfBoundsException` from reversed selections (right-to-left where `start > end`). Normalized selection boundaries with `minOf`/`maxOf` in `applyFormatting` and `clear_format` before passing to `substring` and `DocFormatRepository` functions.
+ - **Crash fix** — `StringIndexOutOfBoundsException` from reversed selections (right-to-left where `start > end`). Normalized selection boundaries with `minOf`/`maxOf` in `applyFormatting` and `clear_format` before passing to `substring` and `DocFormatRepository` functions.
+
+### Follow-up — Color picker, highlight rendering, icon highlighting fix, ribbon cleanup
+- **ColorPickerDialog** — added full-featured dialog with 40 predefined font colors + 40 pastel highlight colors, custom hex input with live preview, and Apply button. Triggered by font color / highlight buttons.
+- **Highlight rendering** — `RichTextVisualTransformation` highlight now reads `span.value` (falls back to `#FDE047`), instead of being hardcoded.
+- **Icon highlighting fix** — `activeFormatting`, `cursorFontColorVal`, `cursorHighlightColorVal` `derivedStateOf` blocks now explicitly read `formatVersion`, forcing recomputation after formatting is applied. Previously the derived states didn't recompose when spans changed.
+- **Selected indicator color** — `RibbonIconButton` background alpha increased from `0.18f` to `0.35f` for a darker, more visible highlight.
+- **Color/highlight toggle** — clicking font color or highlight when already active at the selection removes it (toggle off); otherwise opens the picker.
+- **Font group title** — fixed from "T FONT" to "FONT".
+- **AI Copilot Suite & Document Review groups** — completely removed from Home ribbon.

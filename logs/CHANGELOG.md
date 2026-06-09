@@ -56,3 +56,22 @@ Fixed Home ribbon font formatting — bold, italic, underline, strikethrough, su
 
 ### Files Modified
 - `app/src/main/java/com/example/ui/DocEditorScreen.kt`
+
+## Session 3 — 2026-06-10 (follow-up)
+
+### Summary
+Added Color Picker dialog for font color/highlight, fixed icon highlighting not updating, made selected indicator darker, improved color/highlight toggle behavior, fixed ribbon title, and removed AI Copilot/Document Review groups.
+
+### Changes Made
+1. **ColorPickerDialog** — professional grid with 40 font colors (blacks, blues, greens, reds, oranges, purples) and 40 pastel highlight colors; custom hex input with live preview and Apply button.
+2. **Highlight rendering** — `RichTextVisualTransformation` now reads `span.value` for highlight background color instead of hardcoded `#FDE047`.
+3. **Icon highlighting fix** — `activeFormatting`/`cursorFontColorVal`/`cursorHighlightColorVal` `derivedStateOf` blocks now explicitly read `formatVersion` as a tracked dependency, forcing recomputation when formatting spans change.
+4. **Selected indicator darkness** — `RibbonIconButton` background alpha increased from `0.18f` to `0.35f`.
+5. **Color/highlight toggle** — clicking font color/highlight button when span already exists at selection removes it; otherwise opens picker.
+6. **Ribbon title fix** — font group now displays "FONT" instead of "T FONT".
+7. **AI Copilot Suite & Document Review groups** — completely removed from Home ribbon.
+
+### Files Modified
+- `app/src/main/java/com/example/ui/DocEditorScreen.kt`
+- `logs/CHANGELOG.md`
+- `logs/SESSION_LOG_2026-06-10.md`

@@ -1532,7 +1532,7 @@ fun RibbonGroupContainer(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 val displayTitle = if (title.equals("Font Formatting", ignoreCase = true) || title.equals("Font", ignoreCase = true)) {
-                    "T FONT"
+                    "FONT"
                 } else {
                     title.uppercase()
                 }
@@ -1569,7 +1569,7 @@ fun RibbonIconButton(
     val isDarkTheme = isSystemInDarkTheme()
     val bgColor = when {
         transparentBg -> Color.Transparent
-        isSelected -> colorSchemeColor.copy(alpha = 0.18f)
+        isSelected -> colorSchemeColor.copy(alpha = 0.35f)
         isDarkTheme -> Color(0xFF323236)
         else -> Color(0xFFF1F3F6)
     }
@@ -1606,6 +1606,106 @@ fun RibbonIconButton(
                 tint = contentColor,
                 modifier = Modifier.size(18.dp)
             )
+        }
+    }
+}
+
+val FontColors = listOf(
+    "#000000", "#434343", "#666666", "#999999", "#B7B7B7", "#CCCCCC",
+    "#D9D9D9", "#EFEFEF", "#F3F3F3", "#FFFFFF", "#002060", "#1F3864",
+    "#1F4E79", "#2E75B6", "#4472C4", "#5B9BD5", "#8DB4E2", "#BDD7EE",
+    "#D6E4F0", "#E2EFDA", "#548235", "#70AD47", "#A9D18E", "#C5E0B4",
+    "#D9E2F3", "#FFF2CC", "#FFD966", "#F4B183", "#ED7D31", "#E74C3C",
+    "#C00000", "#FF0000", "#FF8C00", "#FFD700", "#32CD32", "#00CED1",
+    "#0000FF", "#8A2BE2", "#FF69B4", "#A52A2A"
+)
+
+val HighlightColors = listOf(
+    "#FDE047", "#FCD34D", "#FBBF24", "#F59E0B", "#FEF9C3",
+    "#86EFAC", "#4ADE80", "#22C55E", "#16A34A", "#DCFCE7",
+    "#93C5FD", "#60A5FA", "#3B82F6", "#2563EB", "#DBEAFE",
+    "#F9A8D4", "#F472B6", "#EC4899", "#DB2777", "#FCE7F3",
+    "#C4B5FD", "#A78BFA", "#8B5CF6", "#7C3AED", "#EDE9FE",
+    "#FDBA74", "#FB923C", "#F97316", "#EA580C", "#FED7AA",
+    "#FCA5A5", "#F87171", "#EF4444", "#DC2626", "#FEE2E2",
+    "#D1D5DB", "#9CA3AF", "#6B7280", "#4B5563", "#374151"
+)
+
+@Composable
+fun ColorPickerDialog(
+    title: String,
+    colors: List<String>,
+    onColorSelected: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var hexInput by remember { mutableStateOf("#") }
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = if (isSystemInDarkTheme()) Color(0xFF2E2E32) else Color.White),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(16.dp)
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text(title, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = if (isSystemInDarkTheme()) Color.White else Color.Black)
+                Spacer(Modifier.height(12.dp))
+                Column(modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp).verticalScroll(rememberScrollState())) {
+                    val chunked = colors.chunked(5)
+                    chunked.forEach { row ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            row.forEach { colorHex ->
+                                val color = try { Color(android.graphics.Color.parseColor(colorHex)) } catch (e: Exception) { Color.Gray }
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(color)
+                                        .border(1.dp, if (isSystemInDarkTheme()) Color.White.copy(alpha = 0.2f) else Color.Black.copy(alpha = 0.1f), RoundedCornerShape(6.dp))
+                                        .clickable { onColorSelected(colorHex) }
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Divider(color = if (isSystemInDarkTheme()) Color.White.copy(alpha = 0.1f) else Color.Black.copy(alpha = 0.1f))
+                Spacer(Modifier.height(12.dp))
+                Text("Custom", fontWeight = FontWeight.Medium, fontSize = 14.sp, color = if (isSystemInDarkTheme()) Color.White.copy(alpha = 0.7f) else Color.Gray)
+                Spacer(Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    BasicTextField(
+                        value = hexInput,
+                        onValueChange = {
+                            val filtered = it.filter { c -> c.isDigit() || c in "ABCDEFabcdef#" }
+                            if (filtered.length <= 7 && filtered.startsWith("#")) {
+                                hexInput = filtered
+                            } else if (filtered.isNotEmpty() && filtered.first() != '#') {
+                                hexInput = "#$filtered".take(7)
+                            }
+                        },
+                        singleLine = true,
+                        textStyle = TextStyle(fontSize = 14.sp, fontFamily = FontFamily.Monospace, color = if (isSystemInDarkTheme()) Color.White else Color.Black),
+                        modifier = Modifier.weight(1f).height(36.dp).clip(RoundedCornerShape(6.dp)).background(if (isSystemInDarkTheme()) Color(0xFF1E1E22) else Color(0xFFF1F3F6)).padding(horizontal = 8.dp).border(1.dp, if (isSystemInDarkTheme()) Color.White.copy(alpha = 0.15f) else Color.Black.copy(alpha = 0.08f), RoundedCornerShape(6.dp))
+                    )
+                    if (hexInput.length == 7 && hexInput.startsWith("#")) {
+                        val previewColor = try { Color(android.graphics.Color.parseColor(hexInput)) } catch (e: Exception) { Color.Gray }
+                        Box(
+                            modifier = Modifier.size(36.dp).clip(RoundedCornerShape(6.dp)).background(previewColor).border(1.dp, Color.Black.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
+                        )
+                    }
+                    TextButton(onClick = { onColorSelected(hexInput) }) {
+                        Text("Apply", fontWeight = FontWeight.Bold, color = DocWordColor)
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
+                }
+            }
         }
     }
 }
@@ -1898,6 +1998,7 @@ fun WorkspacePane(
         
         val activeFormatting by remember {
             derivedStateOf {
+                formatVersion
                 val spans = DocFormatRepository.getSpans(selectedDoc.id)
                 val pos = editorTextFieldValue.selection.start
                 if (pos < 0) emptySet()
@@ -1906,6 +2007,7 @@ fun WorkspacePane(
         }
         val cursorFontColorVal by remember {
             derivedStateOf {
+                formatVersion
                 val spans = DocFormatRepository.getSpans(selectedDoc.id)
                 val pos = editorTextFieldValue.selection.start
                 if (pos < 0) null else spans.find { it.type == "color" && it.start <= pos && it.end > pos }?.value
@@ -1913,6 +2015,7 @@ fun WorkspacePane(
         }
         val cursorHighlightColorVal by remember {
             derivedStateOf {
+                formatVersion
                 val spans = DocFormatRepository.getSpans(selectedDoc.id)
                 val pos = editorTextFieldValue.selection.start
                 if (pos < 0) null else spans.find { it.type == "highlight" && it.start <= pos && it.end > pos }?.value
@@ -2028,12 +2131,12 @@ fun WorkspacePane(
         var isParagraphExpanded by remember { mutableStateOf(true) }
         var isStylesExpanded by remember { mutableStateOf(true) }
         var isEditingExpanded by remember { mutableStateOf(true) }
-        var isAiExpanded by remember { mutableStateOf(true) }
-        var isReviewExpanded by remember { mutableStateOf(true) }
         var isStatsExpanded by remember { mutableStateOf(true) }
 
         var activeFontFamily by remember { mutableStateOf("Default") }
         var activeFontSize by remember { mutableStateOf("16") }
+        var showFontColorPicker by remember { mutableStateOf(false) }
+        var showHighlightPicker by remember { mutableStateOf(false) }
 
         val coroutineScope = rememberCoroutineScope()
         val snackbarHostState = remember { SnackbarHostState() }
@@ -2509,7 +2612,7 @@ fun WorkspacePane(
                                                                 transparentBg = true,
                                                                 modifier = Modifier.weight(1.1f),
                                                                 customContent = {
-                                                                    Text("↑", color = groupColor, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                                                                    Icon(Icons.Outlined.KeyboardArrowUp, contentDescription = null, tint = groupColor, modifier = Modifier.size(22.dp))
                                                                 }
                                                             )
 
@@ -2536,7 +2639,7 @@ fun WorkspacePane(
                                                                 transparentBg = true,
                                                                 modifier = Modifier.weight(1.1f),
                                                                 customContent = {
-                                                                    Text("↓", color = groupColor, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                                                                    Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = null, tint = groupColor, modifier = Modifier.size(22.dp))
                                                                 }
                                                             )
 
@@ -2672,10 +2775,20 @@ fun WorkspacePane(
                                                                     }
                                                                 }
                                                             )
-                                                            RibbonIconButton(
+                                                             RibbonIconButton(
                                                                 contentDescription = "Font Color",
                                                                 onClick = {
-                                                                    onAction("color")
+                                                                    if ("color" in activeFormatting) {
+                                                                        val sel = editorTextFieldValue.selection
+                                                                        if (!sel.collapsed) {
+                                                                            val start = minOf(sel.start, sel.end)
+                                                                            val end = maxOf(sel.start, sel.end)
+                                                                            DocFormatRepository.removeSpanTypeRange(selectedDoc.id, "color", start, end)
+                                                                            formatVersion++
+                                                                        }
+                                                                    } else {
+                                                                        showFontColorPicker = true
+                                                                    }
                                                                 },
                                                                 isSelected = "color" in activeFormatting,
                                                                 colorSchemeColor = groupColor,
@@ -2693,7 +2806,17 @@ fun WorkspacePane(
                                                             RibbonIconButton(
                                                                 contentDescription = "Highlight",
                                                                 onClick = {
-                                                                    onAction("highlight")
+                                                                    if ("highlight" in activeFormatting) {
+                                                                        val sel = editorTextFieldValue.selection
+                                                                        if (!sel.collapsed) {
+                                                                            val start = minOf(sel.start, sel.end)
+                                                                            val end = maxOf(sel.start, sel.end)
+                                                                            DocFormatRepository.removeSpanTypeRange(selectedDoc.id, "highlight", start, end)
+                                                                            formatVersion++
+                                                                        }
+                                                                    } else {
+                                                                        showHighlightPicker = true
+                                                                    }
                                                                 },
                                                                 isSelected = "highlight" in activeFormatting,
                                                                 colorSchemeColor = groupColor,
@@ -3192,107 +3315,6 @@ fun WorkspacePane(
                                                 }
                                             }
 
-                                            // --- AI TOOLS GROUP ---
-                                            item {
-                                                RibbonGroupContainer(
-                                                    title = "AI Copilot Suite ✨",
-                                                    isExpanded = isAiExpanded,
-                                                    onToggleExpand = { isAiExpanded = !isAiExpanded },
-                                                    accentColor = OnlyOfficePrimary
-                                                ) {
-                                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                        val aiTools = listOf(
-                                                            "Rewrite" to "ai_improve",
-                                                            "Improve" to "ai_improve",
-                                                            "Summarize" to "ai_summarize",
-                                                            "Translate" to "translate_preview",
-                                                            "Expand" to "ai_topics",
-                                                            "Shorten" to "ai_grammar",
-                                                            "Generate" to "ai_topics",
-                                                            "Explain" to "ai_summarize"
-                                                        )
-                                                        aiTools.chunked(4).forEach { rowTools ->
-                                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                                rowTools.forEach { (label, action) ->
-                                                                    Box(
-                                                                        modifier = Modifier
-                                                                            .weight(1f)
-                                                                            .height(44.dp)
-                                                                            .clip(RoundedCornerShape(8.dp))
-                                                                            .background(
-                                                                                brush = androidx.compose.ui.graphics.Brush.linearGradient(
-                                                                                    colors = listOf(
-                                                                                        OnlyOfficePrimary.copy(alpha = 0.15f),
-                                                                                        (if (selectedDoc.type == "word") DocWordColor else if (selectedDoc.type == "sheet") DocSheetColor else DocSlideColor).copy(alpha = 0.05f)
-                                                                                    )
-                                                                                )
-                                                                            )
-                                                                            .border(
-                                                                                width = 1.dp,
-                                                                                color = OnlyOfficePrimary.copy(alpha = 0.25f),
-                                                                                shape = RoundedCornerShape(8.dp)
-                                                                            )
-                                                                            .clickable { onAction(action) },
-                                                                        contentAlignment = Alignment.Center
-                                                                    ) {
-                                                                        Text(
-                                                                            text = label,
-                                                                            fontSize = 11.sp,
-                                                                            fontWeight = FontWeight.Bold,
-                                                                            color = OnlyOfficePrimary
-                                                                        )
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-
-                                            // --- REVIEW GROUP ---
-                                            item {
-                                                RibbonGroupContainer(
-                                                    title = "Document Review",
-                                                    isExpanded = isReviewExpanded,
-                                                    onToggleExpand = { isReviewExpanded = !isReviewExpanded },
-                                                    accentColor = if (selectedDoc.type == "word") DocWordColor else if (selectedDoc.type == "sheet") DocSheetColor else DocSlideColor
-                                                ) {
-                                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                        val reviewItems = listOf(
-                                                            "Spell Check" to "spell_check",
-                                                            "Grammar Check" to "ai_grammar",
-                                                            "Read Aloud" to "read_aloud",
-                                                            "Track Changes" to "track_changes",
-                                                            "Add Comment" to "add_comment",
-                                                            "Protect Doc" to "protect_doc"
-                                                        )
-                                                        reviewItems.chunked(3).forEach { rowReviews ->
-                                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                                rowReviews.forEach { (label, action) ->
-                                                                    Box(
-                                                                        modifier = Modifier
-                                                                            .weight(1f)
-                                                                            .height(40.dp)
-                                                                            .clip(RoundedCornerShape(8.dp))
-                                                                            .background(if (isSystemInDarkTheme()) Color(0xFF323236) else Color(0xFFF1F3F6))
-                                                                            .clickable {
-                                                                                if (action == "track_changes" || action == "add_comment" || action == "protect_doc") {
-                                                                                    coroutineScope.launch { snackbarHostState.showSnackbar("Review tool '$label' activated successfully!") }
-                                                                                } else {
-                                                                                    onAction(action)
-                                                                                }
-                                                                            },
-                                                                        contentAlignment = Alignment.Center
-                                                                    ) {
-                                                                        Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (isSystemInDarkTheme()) Color.White else Color.Black)
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-
                                             // --- STATISTICS GROUP ---
                                             item {
                                                 RibbonGroupContainer(
@@ -3345,6 +3367,44 @@ fun WorkspacePane(
                                                     }
                                                 }
                                             }
+                                        }
+
+                                        if (showFontColorPicker) {
+                                            ColorPickerDialog(
+                                                colors = FontColors,
+                                                title = "Font Color",
+                                                onColorSelected = { hex ->
+                                                    showFontColorPicker = false
+                                                    val sel = editorTextFieldValue.selection
+                                                    if (!sel.collapsed) {
+                                                        val start = minOf(sel.start, sel.end)
+                                                        val end = maxOf(sel.start, sel.end)
+                                                        DocFormatRepository.removeSpanTypeRange(selectedDoc.id, "color", start, end)
+                                                        DocFormatRepository.applySpan(selectedDoc.id, "color", hex, start, end)
+                                                        formatVersion++
+                                                    }
+                                                },
+                                                onDismiss = { showFontColorPicker = false }
+                                            )
+                                        }
+
+                                        if (showHighlightPicker) {
+                                            ColorPickerDialog(
+                                                colors = HighlightColors,
+                                                title = "Highlight Color",
+                                                onColorSelected = { hex ->
+                                                    showHighlightPicker = false
+                                                    val sel = editorTextFieldValue.selection
+                                                    if (!sel.collapsed) {
+                                                        val start = minOf(sel.start, sel.end)
+                                                        val end = maxOf(sel.start, sel.end)
+                                                        DocFormatRepository.removeSpanTypeRange(selectedDoc.id, "highlight", start, end)
+                                                        DocFormatRepository.applySpan(selectedDoc.id, "highlight", hex, start, end)
+                                                        formatVersion++
+                                                    }
+                                                },
+                                                onDismiss = { showHighlightPicker = false }
+                                            )
                                         }
                                     } else {
                                         val groupedTools = filteredTools.groupBy { it.category }
@@ -4856,7 +4916,14 @@ class RichTextVisualTransformation(private val spans: List<DocFormatSpan>, priva
                     "underline" -> builder.addStyle(SpanStyle(textDecoration = TextDecoration.Underline), relStart, relEnd)
                     "strikethrough" -> builder.addStyle(SpanStyle(textDecoration = TextDecoration.LineThrough), relStart, relEnd)
                     "color" -> try { builder.addStyle(SpanStyle(color = Color(android.graphics.Color.parseColor(span.value))), relStart, relEnd) } catch(e:Exception){}
-                    "highlight" -> builder.addStyle(SpanStyle(background = Color(0xFFFDE047).copy(alpha = 0.45f)), relStart, relEnd)
+                    "highlight" -> {
+                        val bgHex = span.value.ifEmpty { "#FDE047" }
+                        try {
+                            builder.addStyle(SpanStyle(background = Color(android.graphics.Color.parseColor(bgHex)).copy(alpha = 0.45f)), relStart, relEnd)
+                        } catch (e: Exception) {
+                            builder.addStyle(SpanStyle(background = Color(0xFFFDE047).copy(alpha = 0.45f)), relStart, relEnd)
+                        }
+                    }
                     "subscript" -> builder.addStyle(SpanStyle(baselineShift = androidx.compose.ui.text.style.BaselineShift.Subscript, fontSize = 11.sp), relStart, relEnd)
                     "superscript" -> builder.addStyle(SpanStyle(baselineShift = androidx.compose.ui.text.style.BaselineShift.Superscript, fontSize = 11.sp), relStart, relEnd)
                     "fontSize" -> {
