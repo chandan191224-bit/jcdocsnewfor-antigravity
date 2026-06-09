@@ -1,0 +1,575 @@
+================================================================================
+  HOME TAB RIBBON — COMPLETE ARCHITECTURE
+================================================================================
+  File: JCdocs_HOME_TAB_RIBBON_ARCHITECTURE.txt
+  Source: app/src/main/java/com/example/ui/DocEditorScreen.kt (~6126 lines)
+  Generated: 2026-06-09
+================================================================================
+
+
+TABLE OF CONTENTS
+=================
+  1. OVERVIEW
+  2. RIBBON PANEL CONTAINER ARCHITECTURE
+  3. HOME TAB RIBBON GROUPS (8 GROUPS)
+     3.1  Font Formatting Group
+     3.2  Clipboard Actions Group
+     3.3  Paragraph Formatting Group
+     3.4  Text Styles Group
+     3.5  Editing & Selection Group
+     3.6  AI Copilot Suite Group
+     3.7  Document Review Group
+     3.8  Live Document Metrics Group
+  4. RIBBON TOOL DATA MODEL
+  5. RIBBON TOOL HANDLER (executeRibbonAction)
+  6. BOTTOM NAVIGATION BAR
+  7. RIBBON EXPAND/COLLAPSE & ANIMATION
+  8. SEARCH WITHIN RIBBON
+  9. STATE MANAGEMENT
+  10. COMPONENT TREE
+  11. ALL ACTION IDS IN HOME TAB
+
+
+================================================================================
+  1. OVERVIEW
+================================================================================
+
+The Home tab ribbon is the primary toolbar shown at the bottom of the
+document editor. It appears only when a document (word/sheet/slide) is
+selected and the ribbon is expanded.
+
+Architecture pattern:
+  - Bottom navigation bar with 5 tabs (Home, Insert, AI Assistant, Layout, Review)
+  - Home tab is first/default tab
+  - Each tab switches the content shown in the expandable ribbon panel above
+  - The ribbon panel is a resizable, animated panel that slides up from bottom
+  - Within the Home tab, tools are organized into 8 expandable group cards
+
+Code location in DocEditorScreen.kt:
+  - Bottom nav bar:           lines 3347-3408
+  - Ribbon expand/collapse:   lines 2130-2139
+  - Home tab groups (LazyColumn): lines 2351-3270
+  - Search/fallback tab view: lines 3271-3339
+
+
+================================================================================
+  2. RIBBON PANEL CONTAINER ARCHITECTURE
+================================================================================
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  Bottom of WorkspacePane (BoxWithConstraints)                       │
+  │                                                                     │
+  │  ┌─────────────────────────────────────────────────────────────────┐│
+  │  │  Surface background (Color(0xFF1E1E22) dark / Color(0xFFF0F2F6) ││
+  │  │  light)                                                         ││
+  │  │                                                                 ││
+  │  │  AnimatedVisibility (isRibbonExpanded)                          ││
+  │  │    enter = slideInVertically + fadeIn                           ││
+  │  │    exit  = slideOutVertically + fadeOut                         ││
+  │  │    animation = spring (damping 0.82, stiffness 400)             ││
+  │  │                                                                 ││
+  │  │  ┌─────────────────────────────────────────────────────────────┐││
+  │  │  │  Resize drag handle (18dp tall)                             │││
+  │  │  │  ─── (36x5dp pill, draggable via pointerInput)              │││
+  │  │  │  drag adjusts ribbonHeightDp (25%-70% of screen)            │││
+  │  │  ├─────────────────────────────────────────────────────────────┤││
+  │  │  │  If activeRibbonTab == "AI Assistant":                      │││
+  │  │  │    → Render full AIChatPanel composable                     │││
+  │  │  │  Else:                                                      │││
+  │  │  │    ┌───────────────────────────────────────────────────────┐│││
+  │  │  │    │  Search bar + Export button + Collapse button (header)││││
+  │  │  │    ├───────────────────────────────────────────────────────┤│││
+  │  │  │    │  Tab content (scrollable)                             ││││
+  │  │  │    │  if Home + no search query → LazyColumn of 8 groups   ││││
+  │  │  │    │  else → search results grouped by category             ││││
+  │  │  │    └───────────────────────────────────────────────────────┘│││
+  │  │  └─────────────────────────────────────────────────────────────┘││
+  │  │                                                                 ││
+  │  │  Bottom Navigation Bar (68dp height)                            ││
+  │  │  ┌─────────────────────────────────────────────────────────────┐││
+  │  │  │  [Home] [Insert] [AI Asst] [Layout] [Review]               │││
+  │  │  └─────────────────────────────────────────────────────────────┘││
+  │  └─────────────────────────────────────────────────────────────────┘│
+  │                                                                     │
+  │  Dialogs (overlay):                                                 │
+  │    CustomMarginsDialog, CustomSizeDialog, PageNumberFormatDialog     │
+  └─────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+  3. HOME TAB RIBBON GROUPS (8 GROUPS)
+================================================================================
+
+The Home tab displays 8 expandable group cards inside a LazyColumn.
+Each group has a toggle (expanded/collapsed) and a colored accent.
+
+----------------------------------------------------------------------------
+  3.1  Font Formatting Group
+----------------------------------------------------------------------------
+  ID:        "font_group" (isFontExpanded state)
+  Accent:    DocWordColor / DocSheetColor / DocSlideColor (based on doc type)
+  Title:     "T FONT" (uppercased, "Font Formatting" → "T FONT")
+
+  Row 1 — Font selection & sizing (weighted horizontal layout):
+    ┌──────────────────────────────────────────────────────────────┐
+    │ [Default       ▼] [16  ▼] [↑] [↓] [Aa] [×]                 │
+    │  font family      font size  inc  dec case  clear            │
+    └──────────────────────────────────────────────────────────────┘
+
+    Font Family dropdown options:
+      Default, Aptos, Calibri, Arial, Times New Roman, Courier New,
+      Georgia, Space Grotesk, JetBrains Mono
+      → Wraps selection in <font face="FontName">...</font> tags
+
+    Font Size dropdown options:
+      9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 48
+      → Wraps selection in <font size="N">...</font> tags
+
+    Increase Font Size (+2sp, max 48)
+    Decrease Font Size (-2sp, min 8)
+    Change Case (cycles: UPPER → lower → Title case)
+    Clear Formatting (×) — strips all HTML-like tags + resets alignment/font
+
+  Row 2 — Text style buttons:
+    ┌──────────────────────────────────────────────────────────────┐
+    │ [B] [I] [U] [abc] [x₂] [x²] [A] [🖊]                     │
+    │ Bold Italic Under Strikethru Sub Super Color Highlight       │
+    └──────────────────────────────────────────────────────────────┘
+
+    Bold       → DocFormatSpan type="bold" — toggles on selection
+    Italic     → DocFormatSpan type="italic" — toggles on selection
+    Underline  → DocFormatSpan type="underline" — toggles on selection
+    Strikethru → Appends " ~~Strikethrough~~" to content
+    Subscript  → Appends " <sub>sub</sub>" to content
+    Superscript→ Appends " <sup>super</sup>" to content
+    Font Color → Toast only (placeholder)
+    Highlight  → Toast only (placeholder)
+
+  DocFormatSpan System:
+    - DocFormatSpan(start, end, type, value) — marks formatted range
+    - DocFormatRepository.getSpans(docId) → SnapshotStateList<DocFormatSpan>
+    - applySpan: merge overlapping spans of same type
+    - removeSpanTypeRange: remove spans of specific type within selection
+    - hasSpan: check if selection is covered by span type
+
+----------------------------------------------------------------------------
+  3.2  Clipboard Actions Group
+----------------------------------------------------------------------------
+  ID:        "clipboard_group" (isClipboardExpanded state)
+  Title:     "CLIPBOARD ACTIONS"
+
+  Layout:
+    ┌──────────────────────────────────────────────────────────────┐
+    │ ┌────────────┐ ┌──────────────────────────────────────────┐ │
+    │ │   PASTE    │ │ [Cut]  [Copy]  [Special...]             │ │
+    │ │   (icon)   │ │ [Paint Style]  [History]                 │ │
+    │ └────────────┘ └──────────────────────────────────────────┘ │
+    └──────────────────────────────────────────────────────────────┘
+
+    PASTE     → Appends "[Pasted Clipboard Data]" to content (placeholder)
+    Cut       → Toast "Content cut to secure clipboard draft"
+    Copy      → Toast "Copied full draft to clipboard!"
+    Special   → Toast "Paste Special: Unformatted UTF-8 Text applied"
+    Paint Style → Toast "Format Painter loaded!"
+    History   → Toast "Opened Clipboard History queue (3 items stored)"
+
+----------------------------------------------------------------------------
+  3.3  Paragraph Formatting Group
+----------------------------------------------------------------------------
+  ID:        "paragraph_group" (isParagraphExpanded state)
+  Title:     "PARAGRAPH FORMATTING"
+
+  Layout (horizontally scrollable row):
+    ┌──────────────────────────────────────────────────────────────┐
+    │ Bullets  Numbers  Multilevel  │  Dec Indent  Inc Indent     │
+    │                                         Line Spacing        │
+    │ ─────────────────────────────────────────────────────────── │
+    │ Align L  Align C  Align R  Align J  │  Shading  Borders    │
+    └──────────────────────────────────────────────────────────────┘
+
+    Bullets        → actionId "bullets" (toast)
+    Numbers        → actionId "numbers" (toast)
+    Multilevel     → actionId "multilevel" (toast)
+    Dec Indent     → actionId "indent_dec" (toast)
+    Inc Indent     → actionId "indent_inc" (toast)
+    Line Spacing   → actionId "line_spacing" (toast: "Line spacing options (1.0, 1.15, 1.5, 2.0)")
+    Align Left     → onAlignmentChange(TextAlign.Left)
+    Align Center   → onAlignmentChange(TextAlign.Center)
+    Align Right    → onAlignmentChange(TextAlign.Right)
+    Align Justify  → onAlignmentChange(TextAlign.Justify)
+    Shading        → actionId "shading" (toast)
+    Borders        → actionId "borders" (toast)
+
+----------------------------------------------------------------------------
+  3.4  Text Styles Group
+----------------------------------------------------------------------------
+  ID:        "styles_group" (isStylesExpanded state)
+  Title:     "TEXT STYLES"
+
+  Layout (2 rows × 4 columns grid):
+    ┌──────────────────────────────────────────────┐
+    │ [Normal]  [Title]  [Subtitle]  [Heading 1]  │
+    │ [Heading 2] [Heading 3] [Quote]  [Manage]   │
+    └──────────────────────────────────────────────┘
+
+    Each style button inserts a markdown-style prefix:
+      Normal    → No prefix
+      Title     → "# " prepended
+      Subtitle  → "## " prepended
+      Heading 1 → "### " prepended
+      Heading 2 → "#### " prepended
+      Heading 3 → "##### " prepended
+      Quote     → "> " prepended
+      Manage    → Toast "Loading style manager..."
+
+----------------------------------------------------------------------------
+  3.5  Editing & Selection Group
+----------------------------------------------------------------------------
+  ID:        "editing_group" (isEditingExpanded state)
+  Title:     "EDITING & SELECTION"
+
+  Layout (2 rows × 3 columns grid):
+    ┌──────────────────────────────────────┐
+    │ [Find]  [Replace]  [Go To]          │
+    │ [Select All] [Select Similar] [Clear]│
+    └──────────────────────────────────────┘
+
+    Find          → Toast "Triggered Command: Find"
+    Replace       → Toast "Triggered Command: Replace"
+    Go To         → Toast "Triggered Command: Go To"
+    Select All    → Toast "Entire document selected (N chars)"
+    Select Similar→ Toast "Triggered Command: Select Similar"
+    Clear Select  → Toast "Active text cursor selection cleared"
+
+----------------------------------------------------------------------------
+  3.6  AI Copilot Suite Group
+----------------------------------------------------------------------------
+  ID:        "ai_group" (isAiExpanded state)
+  Title:     "AI COPILOT SUITE ✨"
+  Accent:    OnlyOfficePrimary with gradient background
+
+  Layout (2 rows × 4 columns grid with gradient borders):
+    ┌──────────────────────────────────────────────┐
+    │ [Rewrite] [Improve] [Summarize] [Translate] │
+    │ [Expand]  [Shorten] [Generate] [Explain]    │
+    └──────────────────────────────────────────────┘
+
+    These are LOCAL simulated AI actions (no real API call):
+      Rewrite   → executeRibbonAction("ai_improve")
+      Improve   → executeRibbonAction("ai_improve")
+      Summarize → executeRibbonAction("ai_summarize")
+      Translate → executeRibbonAction("translate_preview")
+      Expand    → executeRibbonAction("ai_topics")
+      Shorten   → executeRibbonAction("ai_grammar")
+      Generate  → executeRibbonAction("ai_topics")
+      Explain   → executeRibbonAction("ai_summarize")
+
+    Real AI chat is in the "AI Assistant" tab (AIChatPanel)
+
+----------------------------------------------------------------------------
+  3.7  Document Review Group
+----------------------------------------------------------------------------
+  ID:        "review_group" (isReviewExpanded state)
+  Title:     "DOCUMENT REVIEW"
+
+  Layout (2 rows × 3 columns grid):
+    ┌──────────────────────────────────────┐
+    │ [Spell Check] [Grammar] [Read Aloud]│
+    │ [Track Chgs]  [Comment] [Protect]   │
+    └──────────────────────────────────────┘
+
+    Spell Check   → executeRibbonAction("spell_check")
+                      Replaces common typos: teh→the, recieve→receive, etc.
+    Grammar Check → executeRibbonAction("ai_grammar") — placeholder
+    Read Aloud    → executeRibbonAction("read_aloud")
+                      Uses Android TextToSpeech API
+    Track Changes → Toast "Review tool 'Track Changes' activated!"
+    Add Comment   → Toast "Review tool 'Add Comment' activated!"
+    Protect Doc   → Toast "Review tool 'Protect Doc' activated!"
+
+----------------------------------------------------------------------------
+  3.8  Live Document Metrics Group
+----------------------------------------------------------------------------
+  ID:        "stats_group" (isStatsExpanded state)
+  Title:     "LIVE DOCUMENT METRICS"
+
+  Layout (2 rows in a card):
+    ┌──────────────────────────────────────────────┐
+    │   Words       Chars      Paragraphs          │
+    │    (N)        (N)           (N)              │
+    ├──────────────────────────────────────────────┤
+    │   Est. Pages    Read Time                    │
+    │     (N)          (N min)                     │
+    └──────────────────────────────────────────────┘
+
+    Metrics calculated in real-time from draftContent:
+      Words      = split by whitespace, filter not blank, count
+      Chars      = draftContent.length
+      Paragraphs = split by newline, filter not blank, count
+      Est. Pages = max(1, words / 250 + 1)
+      Read Time  = max(1, words / 180 + 1) minutes
+
+
+================================================================================
+  4. RIBBON TOOL DATA MODEL
+================================================================================
+
+  RibbonTool data class:
+    ├─ id: String              — unique identifier (e.g. "bold", "margins")
+    ├─ title: String            — display name (e.g. "Bold", "Margins")
+    ├─ description: String      — tooltip text
+    ├─ icon: ImageVector        — Material icon
+    ├─ category: String         — grouping category (e.g. "Font Formatting")
+    ├─ tab: String              — which tab ("Home", "Insert", etc.)
+    ├─ actionId: String         — ID passed to executeRibbonAction()
+    ├─ hasDropdown: Boolean     — whether it shows a dropdown menu
+    ├─ dropdownOptions: List<String>  — dropdown menu items
+    ├─ onClick: () -> Unit      — action lambda
+    └─ onDropdownOptionClick: (String) -> Unit  — dropdown item handler
+
+  getRibbonTools() returns the FULL flat list of ALL tools across all tabs.
+  For Home tab, tools are filtered by tab="Home" when rendering.
+
+  Home tab tools defined (from getRibbonTools, lines 838-982):
+    - bold, italic, underline          [Font Formatting, Home]
+    - align_left, align_center, align_right  [Paragraph Alignment, Home]
+    - theme_white, theme_ivory, theme_dark   [Page Theme Layout, Home]
+    - font_incr, font_decr, clear_format      [Text Size Scale, Home]
+    - copy, cut, paste                  [Clipboard, Home]
+
+
+================================================================================
+  5. RIBBON TOOL HANDLER (executeRibbonAction)
+================================================================================
+
+  Function: executeRibbonAction(actionId, draftContent, onContentChange, ...)
+
+  This function is the central action dispatcher for ALL ribbon tools.
+  It receives the actionId string and conditionally handles it.
+
+  For Home tab action IDs:
+    "bold"         → DocFormatRepository.applySpan(docId, "bold", "", start, end)
+    "italic"       → DocFormatRepository.applySpan(docId, "italic", "", start, end)
+    "underline"    → DocFormatRepository.applySpan(docId, "underline", "", start, end)
+    "strikethrough"→ DocFormatRepository.applySpan(...)
+    "subscript"    → DocFormatRepository.applySpan(...)
+    "superscript"  → DocFormatRepository.applySpan(...)
+    "align_left"   → onAlignmentChange(TextAlign.Left)
+    "align_center" → onAlignmentChange(TextAlign.Center)
+    "align_right"  → onAlignmentChange(TextAlign.Right)
+    "align_justify"→ onAlignmentChange(TextAlign.Justify)
+    "theme_white"  → onThemeChange("white")
+    "theme_ivory"  → onThemeChange("ivory")
+    "theme_dark"   → onThemeChange("dark")
+    "font_incr"    → onFontSizeChange(18.sp)
+    "font_decr"    → onFontSizeChange(11.sp)
+    "clear_format" → Strips HTML tags, removes all spans, resets to default
+    "copy"         → Toast (clipboard functionality placeholder)
+    "cut"          → Toast (clipboard functionality placeholder)
+    "paste"        → Toast (clipboard functionality placeholder)
+
+
+================================================================================
+  6. BOTTOM NAVIGATION BAR
+================================================================================
+
+  Located at the absolute bottom of the editor, 68dp tall.
+
+  Code: DocEditorScreen.kt lines 3347-3408
+
+  Visual structure:
+    ┌──────────────────────────────────────────────────────────────┐
+    │  [🏠 Home]  [➕ Insert]  [🤖 AI Assistant]  [⚙ Layout]  [✓ Review]│
+    └──────────────────────────────────────────────────────────────┘
+
+  Each tab item:
+    - Icon (22dp) + Label (10sp) stacked vertically
+    - Active tab icon gets colored background pill
+    - On click: toggle ribbon expand (if same tab) or switch tab
+
+  Behavior:
+    - If tapping the already-active tab and ribbon is expanded → collapse ribbon
+    - If tapping a different tab → switch to that tab + expand ribbon
+    - Color changes based on doc type (Word=red, Sheet=green, Slide=orange)
+
+
+================================================================================
+  7. RIBBON EXPAND/COLLAPSE & ANIMATION
+================================================================================
+
+  isRibbonExpanded: Boolean (mutableStateOf, default true)
+  ribbonHeightDp: Dp (default 300dp, range 25%-70% of screen height)
+
+  Animation (AnimatedVisibility wrapping the entire ribbon content):
+    enter = slideInVertically(initialOffsetY = { it }, spring(damping=0.82, stiffness=400))
+           + fadeIn()
+    exit  = slideOutVertically(targetOffsetY = { it }, spring(damping=0.82, stiffness=400))
+           + fadeOut()
+
+  Resize drag handle:
+    - 18dp tall container at top of ribbon
+    - 36×5dp rounded pill indicator
+    - pointerInput + detectDragGestures to adjust ribbonHeightDp
+    - Clamped between 25% and 70% of total screen height
+
+
+================================================================================
+  8. SEARCH WITHIN RIBBON
+================================================================================
+
+  A text search field at the top of the ribbon (when not in AI Assistant tab).
+
+  Behavior:
+    - Filters the full tool list by title, description, or category (case-insensitive)
+    - When search is active, switches to a grouped card layout instead of specific
+      Home tab groups
+    - Each category becomes a card with tools arranged in a responsive grid
+      (3 cols <600dp, 4 cols <900dp, 6 cols >=900dp)
+    - Empty state when no tools match
+
+  Search bar visual:
+    ┌──────────────────────────────────────────────────────────────┐
+    │  🔍 Search tools, commands, features...           ▼  ⬇  📥 │
+    └──────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+  9. STATE MANAGEMENT
+================================================================================
+
+  State variables (all in WorkspacePane composable, DocEditorScreen.kt):
+
+  Local mutableStateOf (within WorkspacePane):
+    ├─ activeRibbonTab        — current tab ("Home", "Insert", etc.)
+    ├─ isRibbonExpanded       — ribbon open/closed
+    ├─ ribbonHeightDp         — resizable height (300dp default)
+    ├─ ribbonSearchQuery      — search text
+    ├─ isFontExpanded         — Font group collapse
+    ├─ isClipboardExpanded    — Clipboard group collapse
+    ├─ isParagraphExpanded    — Paragraph group collapse
+    ├─ isStylesExpanded       — Styles group collapse
+    ├─ isEditingExpanded      — Editing group collapse
+    ├─ isAiExpanded           — AI Copilot group collapse
+    ├─ isReviewExpanded       — Review group collapse
+    ├─ isStatsExpanded        — Metrics group collapse
+    ├─ activeFontFamily       — Selected font ("Default")
+    ├─ activeFontSize         — Selected size ("16")
+    ├─ editorTheme            — Paper color ("white"/"ivory"/"dark")
+    ├─ pageMargins            — Margin Dp (24.dp default)
+    ├─ columnCount            — Columns (1 default)
+    ├─ textAlignment          — TextAlign (Left default)
+    ├─ fontSize               — TextUnit (16.sp default)
+    ├─ isLandscape            — Orientation (false)
+    └─ isSpeaking             — TTS speaking state
+
+  From DocViewModel (collected via collectAsStateWithLifecycle):
+    ├─ selectedDoc            — Current document entity
+    ├─ draftContent           — Current document text
+    ├─ draftTitle             — Current document title
+    └─ pageFormat             — Page format ("A4 (.pdf)")
+
+  Undo/Redo integration:
+    Before executing any action that modifies content, pushSnapshot() is called
+    to save the current state to undoRedoManager.
+
+
+================================================================================
+  10. COMPONENT TREE
+================================================================================
+
+  DocEditorScreen
+    └─ WorkspacePane
+         └─ AnimatedVisibility (ribbon)
+              └─ Column
+                   ├─ Drag handle (ribbonHeightDp resize)
+                   ├─ if activeRibbonTab == "AI Assistant"
+                   │    └─ AIChatPanel
+                   └─ else
+                        ├─ SearchBar + ExportButton + CollapseButton
+                        └─ if Home + empty search
+                             └─ LazyColumn (8 groups)
+                                  ├─ RibbonGroupContainer("T FONT")
+                                  │    ├─ RibbonDropdown(font family)
+                                  │    ├─ RibbonDropdown(font size)
+                                  │    ├─ RibbonIconButton(inc)
+                                  │    ├─ RibbonIconButton(dec)
+                                  │    ├─ RibbonIconButton(case)
+                                  │    ├─ RibbonIconButton(clear)
+                                  │    ├─ RibbonIconButton(Bold)
+                                  │    ├─ RibbonIconButton(Italic)
+                                  │    ├─ RibbonIconButton(Underline)
+                                  │    ├─ RibbonIconButton(Strikethrough)
+                                  │    ├─ RibbonIconButton(Subscript)
+                                  │    ├─ RibbonIconButton(Superscript)
+                                  │    ├─ RibbonIconButton(Color)
+                                  │    └─ RibbonIconButton(Highlight)
+                                  ├─ RibbonGroupContainer("CLIPBOARD ACTIONS")
+                                  │    └─ Paste, Cut, Copy, Special, Paint, History
+                                  ├─ RibbonGroupContainer("PARAGRAPH FORMATTING")
+                                  │    └─ Bullets, Numbers, Indents, Alignments, etc.
+                                  ├─ RibbonGroupContainer("TEXT STYLES")
+                                  │    └─ Normal, Title, H1, H2, H3, Quote, Manage
+                                  ├─ RibbonGroupContainer("EDITING & SELECTION")
+                                  │    └─ Find, Replace, Go To, Select All, etc.
+                                  ├─ RibbonGroupContainer("AI COPILOT SUITE")
+                                  │    └─ Rewrite, Improve, Summarize, etc.
+                                  ├─ RibbonGroupContainer("DOCUMENT REVIEW")
+                                  │    └─ Spell Check, Grammar, Read Aloud, etc.
+                                  └─ RibbonGroupContainer("LIVE DOCUMENT METRICS")
+                                       └─ Words, Chars, Paragraphs, Pages, Time
+                        └─ else
+                             └─ LazyColumn (search results grouped by category)
+                                  └─ per category: Card → grid of RibbonToolCard
+              └─ Bottom Navigation Bar
+                   └─ [Home] [Insert] [AI Assistant] [Layout] [Review]
+
+
+================================================================================
+  11. ALL ACTION IDS IN HOME TAB
+================================================================================
+
+  ┌─────────────────────┬────────────────────────────────────────────────┐
+  │ Action ID           │ What it Does                                  │
+  ├─────────────────────┼────────────────────────────────────────────────┤
+  │ bold                │ Toggle bold span on selection                 │
+  │ italic              │ Toggle italic span on selection               │
+  │ underline           │ Toggle underline span on selection            │
+  │ strikethrough       │ Append strikethrough markup                   │
+  │ subscript           │ Append subscript markup                       │
+  │ superscript         │ Append superscript markup                     │
+  │ color               │ Toast (placeholder)                           │
+  │ highlight           │ Toast (placeholder)                           │
+  │ copy                │ Toast (placeholder)                           │
+  │ cut                 │ Toast (placeholder)                           │
+  │ paste               │ Toast (placeholder)                           │
+  │ align_left          │ TextAlign.Left                                │
+  │ align_center        │ TextAlign.Center                              │
+  │ align_right         │ TextAlign.Right                               │
+  │ align_justify       │ TextAlign.Justify                             │
+  │ line_spacing        │ Toast with options                            │
+  │ theme_white         │ editorTheme = "white"                         │
+  │ theme_ivory         │ editorTheme = "ivory"                         │
+  │ theme_dark          │ editorTheme = "dark"                          │
+  │ font_incr           │ fontSize = 18sp                               │
+  │ font_decr           │ fontSize = 11sp                               │
+  │ clear_format        │ Strip all HTML tags, clear spans, reset       │
+  │ spell_check         │ Fix common typos (teh→the, etc.)              │
+  │ read_aloud          │ TTS speak/stop                                │
+  │ ai_summarize        │ Insert summary bullets                        │
+  │ ai_improve          │ Prepend "PROFESSIONAL POLISH" tone            │
+  │ ai_grammar          │ Trim whitespace (placeholder)                 │
+  │ ai_topics           │ Append 3 research topics                      │
+  │ translate_preview   │ English→Spanish word swap demo                │
+  │ bullets             │ Toast only                                    │
+  │ numbers             │ Toast only                                    │
+  │ multilevel          │ Toast only                                    │
+  │ indent_dec          │ Toast only                                    │
+  │ indent_inc          │ Toast only                                    │
+  │ shading             │ Toast only                                    │
+  │ borders             │ Toast only                                    │
+  └─────────────────────┴────────────────────────────────────────────────┘
+
+
+================================================================================
+  END OF HOME TAB RIBBON ARCHITECTURE
+================================================================================

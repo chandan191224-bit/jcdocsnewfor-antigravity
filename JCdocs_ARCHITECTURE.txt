@@ -1,0 +1,1378 @@
+================================================================================
+  JCDocs — COMPLETE ARCHITECTURE & UI/UX DOCUMENTATION
+================================================================================
+  Generated: 2026-06-09
+  App ID: com.aistudio.jcdocs.ywtqka
+  Package: com.example
+  Project: JCdocs — Premium Reactive Offline Office Suite for Android
+================================================================================
+
+
+TABLE OF CONTENTS
+=================
+  1. PROJECT OVERVIEW
+  2. TECHNOLOGY STACK
+  3. ARCHITECTURE OVERVIEW (MVVM)
+  4. LAYER-BY-LAYER DETAIL
+     4.1  Presentation Layer (UI)
+     4.2  ViewModel Layer
+     4.3  Data Layer (Repository + DAO + Room)
+     4.4  AI Provider Layer
+  5. UI SCREENS & COMPONENTS (COMPLETE BREAKDOWN)
+     5.1  MainActivity
+     5.2  DocEditorScreen — Root Container
+     5.3  SidebarExplorer — Left File Drawer
+     5.4  EmptyWorkspaceState — Home/Dashboard
+     5.5  WorkspacePane — Document Editor Container
+     5.6  WordDocumentEditor — Rich Text Editor
+     5.7  SpreadsheetEditor — Grid + Formula Engine
+     5.8  SlidePresentationWorkspace — Slide Deck Editor
+     5.9  FullscreenPresentationView — Slideshow Mode
+     5.10 AIChatPanel — AI Assistant Chat
+     5.11 CreateDocumentDialog
+     5.12 Dialogs (Margins, Size, Page Number)
+  6. RIBBON UI SYSTEM — DETAILED BREAKDOWN
+     6.1  Ribbon Tabs & Tools
+     6.2  Ribbon Group by Tab
+     6.3  executeRibbonAction — All Action Handlers
+     6.4  Bottom Navigation Bar
+  7. DATA FLOW DIAGRAMS
+     7.1  Document Edit Flow
+     7.2  Spreadsheet Formula Evaluation Flow
+     7.3  AI Chat Message Flow
+     7.4  Undo/Redo Flow
+  8. DATABASE SCHEMA (Room)
+     8.1  documents Table
+     8.2  chat_conversations Table
+     8.3  chat_messages Table
+     8.4  ai_provider_configs Table
+  9. AI PROVIDER INTEGRATIONS
+     9.1  AiProvider Interface
+     9.2  GeminiAiProvider
+     9.3  OpenRouterAiProvider
+     9.4  CustomAiProvider
+  10. STATE MANAGEMENT
+     10.1 ViewModel StateFlows
+     10.2 Compose State Hoisting Pattern
+     10.3 DocFormatSpan System
+  11. THEME & STYLING
+     11.1 Color Palette
+     11.2 Typography
+     11.3 Theme (Light/Dark/Dynamic)
+  12. BUILD CONFIGURATION
+  13. DEPENDENCIES
+  14. TESTING
+
+
+================================================================================
+  1. PROJECT OVERVIEW
+================================================================================
+
+JCdocs is a fully offline, premium Android office suite built with Kotlin and
+Jetpack Compose. It features:
+
+  - Word Document Editor (rich text formatting, themes, margins, columns, PDF export)
+  - Spreadsheet Editor (dynamic formulas: SUM, AVG, arithmetic, cell references)
+  - Slide Presentation Editor (multi-slide with themes, full-screen present mode)
+  - AI Conversational Assistant (multi-provider: Gemini, OpenRouter, Custom)
+  - File management (search, filter by type, favorites, CRUD)
+
+Styled after ONLYOFFICE (terracotta/orange branding). Designed for API 24-36.
+
+
+================================================================================
+  2. TECHNOLOGY STACK
+================================================================================
+
+  Language:         Kotlin
+  UI Framework:     Jetpack Compose + Material 3
+  Architecture:     MVVM (single Activity, single ViewModel)
+  Database:         Room (SQLite) — version 2
+  Networking:       Retrofit 2.12 + Moshi 1.15 + OkHttp 4.10
+  Async:            Kotlin Coroutines + Flow
+  DI:               Manual (no DI framework)
+  Build:            Gradle 9.x with AGP 9.1.1, KSP 2.3.5
+  Min SDK:          24
+  Target SDK:       36
+  Compile SDK:      36
+
+
+================================================================================
+  3. ARCHITECTURE OVERVIEW (MVVM)
+================================================================================
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │                      PRESENTATION LAYER                            │
+  │                                                                    │
+  │  MainActivity                                                      │
+  │    └─ MyApplicationTheme (Material 3)                              │
+  │         └─ DocEditorScreen                                         │
+  │              ├─ SidebarExplorer (drawer)                            │
+  │              ├─ WorkspacePane                                       │
+  │              │    ├─ WordDocumentEditor                             │
+  │              │    ├─ SpreadsheetEditor                              │
+  │              │    └─ SlidePresentationWorkspace                     │
+  │              ├─ AIChatPanel (in ribbon)                             │
+  │              ├─ FullscreenPresentationView (overlay)                │
+  │              └─ CreateDocumentDialog                                │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │                      VIEWMODEL LAYER                                │
+  │                                                                    │
+  │  DocViewModel (AndroidViewModel)                                    │
+  │    ├─ Document CRUD State (documents, selectedDoc, draftTitle,      │
+  │    │   draftContent, searchQuery, selectedTypeFilter)               │
+  │    ├─ Spreadsheet State (sheetData, selectedCell)                   │
+  │    ├─ Slide State (slides, currentSlideIndex, isPlayingPresentation)│
+  │    └─ AI Chat State (activeConversation, aiMessages, aiProviders,   │
+  │                       isAiLoading, aiError)                         │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │                      DATA LAYER                                     │
+  │                                                                    │
+  │  DocRepository                                                      │
+  │    └─ DocDao → Room DB → "documents" table                          │
+  │                                                                    │
+  │  AiChatRepository                                                   │
+  │    └─ ChatDao → Room DB                                             │
+  │         ├─ "chat_conversations" table                               │
+  │         ├─ "chat_messages" table                                    │
+  │         └─ "ai_provider_configs" table                              │
+  ├─────────────────────────────────────────────────────────────────────┤
+  │                      AI PROVIDER LAYER                              │
+  │                                                                    │
+  │  AiProvider (interface)                                             │
+  │    ├─ GeminiAiProvider                                              │
+  │    ├─ OpenRouterAiProvider                                          │
+  │    └─ CustomAiProvider                                              │
+  └─────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+  4. LAYER-BY-LAYER DETAIL
+================================================================================
+
+--------------------------------------------------------------------
+  4.1  Presentation Layer (UI)
+--------------------------------------------------------------------
+
+  File:  MainActivity.kt
+  Role:  Single Activity entry point.
+         - Calls enableEdgeToEdge() for modern layout
+         - Creates DocViewModel via viewModel() delegate
+         - Sets content to MyApplicationTheme wrapping DocEditorScreen
+
+  File:  DocEditorScreen.kt (6126 lines)
+  Role:  The entire UI of the app.
+         Contains ALL composable functions for the app — no modular
+         separation across files.
+
+  Composables defined in DocEditorScreen.kt:
+    - DocEditorScreen              — Root scaffold
+    - SidebarExplorer              — Left file drawer
+    - DocumentTile                 — List item for documents
+    - FilterItem                   — Data class for filter chips
+    - RibbonTool                   — Data class for ribbon tools
+    - RibbonToolCard               — Single tool card in ribbon
+    - RibbonGroupContainer         — Expandable group card
+    - RibbonIconButton             — Icon button widget
+    - RibbonDropdown               — Dropdown selector widget
+    - ExportButton                 — PDF export button
+    - PageRuler                    — Ruler canvas
+    - WorkspacePane                — Editor container
+    - EmptyWorkspaceState          — Dashboard/home screen
+    - FeaturedDocBentoCard         — Featured doc card
+    - CollaborationBentoCard       — Team collab card
+    - StatsBentoSquare             — Stats card
+    - RoomDbStorageBentoSquare     — Storage card
+    - SmartTemplatesBentoCard      — Template quick-create
+    - WordDocumentEditor           — Word text editor
+    - SpreadsheetEditor            — Spreadsheet grid
+    - SlidePresentationWorkspace   — Slide editor
+    - FullscreenPresentationView   — Slideshow fullscreen
+    - CreateDocumentDialog         — New doc creation dialog
+    - CustomMarginsDialog          — Margin config dialog
+    - CustomSizeDialog             — Page size config dialog
+    - PageNumberFormatDialog       — Page number format dialog
+    - DocFormatSpan                — Formatting span data class
+    - DocFormatRepository          — Span management singleton
+    - DocumentLayoutEngine         — Page dimensions helper
+    - WorkspaceMenuBar             — Top toolbar with title/undo/redo
+
+  File:  AIChatPanel.kt (808 lines)
+  Role:  AI chat panel composables (displayed when "AI Assistant" ribbon tab active)
+    - AIChatPanel                  — Root chat composable
+    - HeaderSection                — Chat header
+    - MessageList                  — Scrollable message list
+    - ChatBubble                   — Individual message bubble
+    - ChatInputArea                — Message input field
+    - WelcomeView                  — Empty state welcome
+    - HistoryPanel                 — Conversation history overlay
+    - HistoryItem                  — Single history entry
+    - SettingsPanel                — AI provider settings overlay
+    - SettingsField                — Settings input field
+
+  File:  DocUndoRedoManager.kt (82 lines)
+  Role:  Undo/redo logic
+    - DocEditorSnapshot            — State snapshot data class
+    - DocUndoRedoManager           — Stack-based undo/redo manager
+
+  File:  ui/theme/Color.kt
+  File:  ui/theme/Theme.kt
+  File:  ui/theme/Type.kt
+
+--------------------------------------------------------------------
+  4.2  ViewModel Layer
+--------------------------------------------------------------------
+
+  File:  viewmodel/DocViewModel.kt (744 lines)
+  Class: DocViewModel(application: Application) : AndroidViewModel
+
+  Responsibilities:
+    - Document CRUD (create, read, update, delete documents)
+    - Document search & filter by type
+    - Spreadsheet cell data management & formula evaluation
+    - Slide management & presenter mode
+    - AI chat conversation management
+    - AI provider configuration
+    - Auto-save to Room database on every change
+
+  Key StateFlows (public):
+    ┌──────────────────────────┬──────────────────────────────────────┐
+    │ StateFlow                │ Purpose                              │
+    ├──────────────────────────┼──────────────────────────────────────┤
+    │ documents                │ Filtered document list (search+type) │
+    │ selectedDoc              │ Currently open document              │
+    │ draftTitle               │ Editable title in sidebar            │
+    │ draftContent             │ Editable content (stringified)       │
+    │ searchQuery              │ Search bar text                      │
+    │ selectedTypeFilter       │ "all"/"word"/"sheet"/"slide"         │
+    │ pageFormat               │ "A4"/"Letter"/"Custom", etc.         │
+    │ customPageDimensions     │ Width/Height in inches               │
+    │ sheetData                │ Map of cell ref -> expression         │
+    │ selectedCell             │ Currently selected cell (e.g. "A1")  │
+    │ slides                   │ List of SlideItem                    │
+    │ currentSlideIndex        │ Active slide index                   │
+    │ isPlayingPresentation    │ Fullscreen slideshow toggle          │
+    │ activeConversation       │ Active AI chat conversation          │
+    │ conversations            │ All chat conversations               │
+    │ aiMessages               │ Messages in active conversation      │
+    │ aiProviders              │ AI provider configs                  │
+    │ isAiLoading              │ AI request in progress               │
+    │ aiError                  │ AI error message                     │
+    └──────────────────────────┴──────────────────────────────────────┘
+
+  Key Methods:
+    - createNewDocument(title, type)    — creates + auto-selects
+    - selectDocument(doc)               — opens doc for editing
+    - updateDraftTitle / updateDraftContent  — real-time auto-save
+    - toggleFavorite / deleteDocument
+    - selectCell / updateCellExpression / getCellValue
+    - addNewSlide / deleteSlide / updateSlideContent / togglePresenterMode
+    - selectConversation / startNewConversation / sendMessage
+    - selectProvider / addCustomProvider / deleteProviderConfig / updateProviderConfig
+    - testProviderConnection
+
+  Formula Evaluation Engine (in DocViewModel):
+    - evaluateCell() — recursive evaluator with circular ref detection
+    - Supports: =SUM(range), =AVG(range), arithmetic (=A1*B2), cell references
+    - getCellsInRange() — expands "A1:B3" to ["A1","A2",...,"B3"]
+
+--------------------------------------------------------------------
+  4.3  Data Layer
+--------------------------------------------------------------------
+
+  DocEntity.kt:
+    @Entity(tableName = "documents")
+    data class DocEntity(
+      id: Int (autoGenerate),
+      title: String,
+      type: String ("word"|"sheet"|"slide"),
+      content: String (text for word, JSON for sheet/slide),
+      updatedAt: Long,
+      createdAt: Long,
+      isFavorite: Boolean
+    )
+
+  DocDao.kt:
+    - getAllDocuments(): Flow<List<DocEntity>>  (ORDER BY updatedAt DESC)
+    - getDocumentById(id): Flow<DocEntity?>
+    - getDocumentsByType(type): Flow<List<DocEntity>>
+    - insertDocument(document) — OnConflictStrategy.REPLACE
+    - deleteDocument(document)
+    - deleteDocumentById(id)
+    - searchDocuments(query) — LIKE '%query%'
+
+  ChatEntities.kt:
+    - ChatConversation (id, title, lastMessage, createdAt, updatedAt, isArchived, activeProviderId)
+    - ChatMessageEntity (id, conversationId FK, role, content, mediaUrl, mediaType, createdAt)
+    - AiProviderConfig (id, name, apiKey, baseUrl, modelId, isActive, isDefault)
+
+  ChatDao.kt:
+    - Conversations: getAll, getById, insert, update, delete
+    - Messages: getForConversation (Flow), getList (suspend), insert, deleteForConversation
+    - Providers: getAll (Flow), getActive, insert, update, delete, deactivateAll
+
+  DocDatabase.kt:
+    @Database(entities = [DocEntity, ChatConversation, ChatMessageEntity, AiProviderConfig], version = 2)
+    - Singleton pattern with fallbackToDestructiveMigration()
+
+  DocRepository.kt:
+    Thin wrapper over DocDao — exposes all DAO methods as Flow/suspend.
+
+  AiChatRepository.kt:
+    Wraps ChatDao for conversations, messages, and providers.
+    - getActiveProvider() resolves AiProviderConfig -> AiProvider (Gemini, OpenRouter, or Custom)
+    - Uses BuildConfig.GEMINI_API_KEY / BuildConfig.OPENROUTER_API_KEY for default key injection
+
+--------------------------------------------------------------------
+  4.4  AI Provider Layer
+--------------------------------------------------------------------
+
+  AiProvider.kt (interface):
+    - suspend fun chat(messages, systemPrompt): Result<AiResponse>
+    - suspend fun testConnection(): Boolean
+
+  GeminiAiProvider.kt:
+    - Model: gemini-3.5-flash via generativelanguage.googleapis.com
+    - API: POST /v1beta/models/gemini-3.5-flash:generateContent?key=API_KEY
+    - GeminiRequest/Response DTOs with Moshi @JsonClass
+    - 30s connect / 60s read timeouts
+
+  OpenRouterAiProvider.kt:
+    - 12+ free models with automatic fallback chain
+    - Models: gemini-2.5-flash, deepseek-r1, gpt-oss-20b, llama-3.3, qwen-2.5, phi-3, etc.
+    - Headers: Authorization (Bearer), HTTP-Referer, X-Title
+    - Falls through models on failure; breaks on 401/403
+    - Key preview in error messages (first 5 + last 5 chars)
+
+  CustomAiProvider.kt:
+    - OpenAI-compatible API (reuses OpenRouterApi interface)
+    - User-configurable: baseUrl, apiKey, model
+    - Default: https://api.openai.com/v1/ with gpt-3.5-turbo
+
+
+================================================================================
+  5. UI SCREENS & COMPONENTS (COMPLETE BREAKDOWN)
+================================================================================
+
+--------------------------------------------------------------------
+  5.1  MainActivity
+--------------------------------------------------------------------
+  File: MainActivity.kt
+
+  Layout:
+    ┌──────────────────────────────────┐
+    │  MyApplicationTheme (M3)         │
+    │  ┌────────────────────────────┐  │
+    │  │  DocEditorScreen           │  │
+    │  │  (viewModel = DocViewModel) │  │
+    │  └────────────────────────────┘  │
+    └──────────────────────────────────┘
+
+  Edge-to-edge enabled.
+  DocViewModel created via viewModel() factory.
+
+--------------------------------------------------------------------
+  5.2  DocEditorScreen — Root Container
+--------------------------------------------------------------------
+  File: DocEditorScreen.kt, line 188-319
+
+  Layout:
+    ┌──────────────────────────────────────────────────────────────┐
+    │  Scaffold                                                    │
+    │  ┌────────────────────────────────────────────────────────┐  │
+    │  │  Box (overlay container)                                │  │
+    │  │  ┌──────────────────────┬─────────────────────────────┐ │  │
+    │  │  │  WorkspacePane       │  AnimatedVisibility         │ │  │
+    │  │  │  (editor)            │  (SidebarExplorer overlay)  │ │  │
+    │  │  └──────────────────────┴─────────────────────────────┘ │  │
+    │  │                                                         │  │
+    │  │  CreateDocumentDialog (when showCreateDialog=true)       │  │
+    │  │                                                         │  │
+    │  │  FullscreenPresentationView (when isPlaying=true)        │  │
+    │  └─────────────────────────────────────────────────────────┘  │
+    └──────────────────────────────────────────────────────────────┘
+
+  BackHandler behavior:
+    1. If presentation playing -> exit presentation
+    2. Else if sidebar expanded -> collapse sidebar
+    3. Else if doc selected -> deselect doc
+
+--------------------------------------------------------------------
+  5.3  SidebarExplorer — Left File Drawer
+--------------------------------------------------------------------
+  File: DocEditorScreen.kt, line 322-618
+
+  Width: 320dp, slides in from left with scrim overlay.
+
+  Layout (top to bottom):
+    ┌──────────────────────────────────────┐
+    │  Header Row                          │
+    │  ┌────┐  JCdocs                      │
+    │  │ ✓  │  ONLYOFFICE Suite Engine     │
+    │  └────┘                              │
+    ├──────────────────────────────────────┤
+    │  Active Document Card (if selected)  │
+    │  ┌──────────────────────────────────┐│
+    │  │ ACTIVE DOCUMENT                  ││
+    │  │ ┌──┐ ┌──────────────────────┐    ││
+    │  │ │W │ │ Document Title (edit)│    ││
+    │  │ └──┘ └──────────────────────┘    ││
+    │  └──────────────────────────────────┘│
+    │  OR: "NO ACTIVE DOCUMENT" placeholder│
+    ├──────────────────────────────────────┤
+    │  Search Bar (OutlinedTextField)      │
+    ├──────────────────────────────────────┤
+    │  [Create Office File] Button         │
+    ├──────────────────────────────────────┤
+    │  Filter Chips Row (All, Writer,      │
+    │  Sheets, Slides) — LazyRow           │
+    ├──────────────────────────────────────┤
+    │  ───── DIVIDER ─────                 │
+    ├──────────────────────────────────────┤
+    │  RECENT DOCUMENTS                    │
+    │  ┌──────────────────────────────────┐│
+    │  │ DocumentTile (repeating)         ││
+    │  │ ┌──┐ ┌─────┐ ┌─────┬──────┐     ││
+    │  │ │W │ │Title│ │⭐  │ 🗑  │     ││
+    │  │ └──┘ │Date │ └─────┴──────┘     ││
+    │  │      └─────┘                     ││
+    │  └──────────────────────────────────┘│
+    │  ... more tiles ...                  │
+    └──────────────────────────────────────┘
+
+  DocumentTile visual states:
+    - Selected: colored border + 8% alpha background
+    - Default: surface color
+    - Favorite: red heart icon (filled)
+
+  Color coding by doc type:
+    - word → DocWordColor   (#E2574C terracotta red)
+    - sheet → DocSheetColor (#4DA06F emerald green)
+    - slide → DocSlideColor (#E08B3A pumpkin orange)
+
+--------------------------------------------------------------------
+  5.4  EmptyWorkspaceState — Home/Dashboard
+--------------------------------------------------------------------
+  File: DocEditorScreen.kt, line 3477-4010+
+
+  Shown when no document is selected.
+  Has 4 sub-tabs: "home", "files", "shared", "settings"
+
+  HOME TAB (Bento Grid Layout):
+    ┌────────────────────────────────────────────┐
+    │  Search Bar (top pill) + Avatar             │
+    ├────────────────────────────────────────────┤
+    │  ┌─────────────────┐ ┌────────┬──────────┐ │
+    │  │ FeaturedDocCard │ │ Stats  │ Storage  │ │
+    │  │ (latest doc)    │ │ Square │ Square   │ │
+    │  │ [Quick Create]  │ ├────────┴──────────┤ │
+    │  └─────────────────┘ │ Smart Templates   │ │
+    │  ┌──────────────────┐│ Card              │ │
+    │  │ Collaboration    ││ (Quick Create     │ │
+    │  │ Card             ││ buttons)          │ │
+    │  └──────────────────┘└──────────────────┘ │
+    └────────────────────────────────────────────┘
+
+    On narrow screens: single column layout.
+    On wide screens (>=700dp): 2-column grid.
+
+  FILES TAB:
+    - Title: "My Documents Ecosystem"
+    - Horizontal filter chips: All Streams, Writer Note, Spreadsheet, Slide Decks
+    - LazyColumn of DocumentTile items
+    - Empty state icon with message
+
+  SHARED TAB:
+    - Collaboration Dashboard Cockpit
+    - Simulated users: Sarah Jenkins (Writer), Alex Rivera (Sheets), David Chang (Slides)
+    - "Integrity Agent VIPER" autosave bot
+
+--------------------------------------------------------------------
+  5.5  WorkspacePane — Document Editor Container
+--------------------------------------------------------------------
+  File: DocEditorScreen.kt, line 1815-3475
+
+  When selectedDoc != null:
+    ┌──────────────────────────────────────────────────┐
+    │  WorkspaceMenuBar                                │
+    │  ┌────────────────────────────────────────────┐  │
+    │  │ ☰  [Document Title]  ↩  🔄  ⤵️  ★        │  │
+    │  └────────────────────────────────────────────┘  │
+    ├──────────────────────────────────────────────────┤
+    │  Editor Area (type-dependent)                    │
+    │  ┌────────────────────────────────────────────┐  │
+    │  │                                            │  │
+    │  │  word    → WordDocumentEditor              │  │
+    │  │  sheet   → SpreadsheetEditor               │  │
+    │  │  slide   → SlidePresentationWorkspace      │  │
+    │  │                                            │  │
+    │  └────────────────────────────────────────────┘  │
+    ├──────────────────────────────────────────────────┤
+    │  Ribbon Panel (animated, collapsible,            │
+    │  resizable via drag handle)                      │
+    │  ┌────────────────────────────────────────────┐  │
+    │  │ [Search tools...]           ▼  ⬇  Export │  │
+    │  │ ┌────────────────────────────────────────┐ │  │
+    │  │ │ Font Formatting / Clipboard / Paragraph│ │  │
+    │  │ │ Styles / AI Copilot / Review / Stats   │ │  │
+    │  │ └────────────────────────────────────────┘ │  │
+    │  └────────────────────────────────────────────┘  │
+    ├──────────────────────────────────────────────────┤
+    │  Bottom Navigation Bar (5 tabs)                  │
+    │  [🏠 Home] [➕ Insert] [🤖 AI] [⚙ Layout] [✓ Review] │
+    └──────────────────────────────────────────────────┘
+
+  States managed at this level:
+    - editorTheme ("white", "ivory", "dark")
+    - pageMargins (Dp)
+    - columnCount (1, 2, 3)
+    - textAlignment (Left, Center, Right, Justify)
+    - fontSize (TextUnit, default 16sp)
+    - isLandscape (Boolean)
+    - pageNumberPosition / pageNumberFormat / pageNumberStartAt
+    - editorTextFieldValue (TextFieldValue)
+    - activeRibbonTab ("Home"/"Insert"/"AI Assistant"/"Layout"/"Review")
+    - isRibbonExpanded
+    - undoRedoManager (DocUndoRedoManager per doc)
+    - Various group expand toggles (isFontExpanded, isClipboardExpanded, etc.)
+    - tts (TextToSpeech for Read Aloud)
+
+--------------------------------------------------------------------
+  5.6  WordDocumentEditor — Rich Text Editor
+--------------------------------------------------------------------
+  File: DocEditorScreen.kt (inline, starts around line 2060)
+
+  Rendering:
+    - Draws a page-like canvas (BasicTextField on a simulated page)
+    - Page dimensions calculated by DocumentLayoutEngine based on format + orientation
+    - Paper background color changes with editorTheme
+      - "white" → Color.White
+      - "ivory" → Color(0xFFFFF8E7)
+      - "dark" → Color(0xFF1E1E1E)
+    - Draws page shadow via drawBehind
+    - Column layout for multi-column display
+    - Page number displayed if pageNumberPosition != null
+
+  Features:
+    - BasicTextField for full rich text editing
+    - Text alignment support
+    - Font size (tag-based: <font size="12">)
+    - Font family (tag-based: <font face="Arial">)
+    - Bold/Italic/Underline via DocFormatSpan system
+    - Strikethrough (~~text~~), Subscript (<sub>), Superscript (<sup>)
+    - Change case toggle (UPPER/lower/Title)
+    - "Clear Formatting" strips all HTML-like tags
+
+  DocFormatSpan System:
+    - DocFormatSpan(start, end, type, value) — marks formatted ranges
+    - DocFormatRepository: singleton per docId managing SnapshotStateList<DocFormatSpan>
+    - applySpan: merges overlapping spans of same type
+    - removeSpanRange: removes/truncates spans in selection
+    - shiftSpans: adjusts indices when text is inserted/deleted
+    - Used for Bold, Italic, Underline formatting
+
+  Undo/Redo:
+    - DocEditorSnapshot captures full state (content, spans, theme, margins, etc.)
+    - WorkspaceMenuBar has Undo/Redo buttons
+    - Push on content/formatting change; 500 max history
+
+  PDF Export:
+    - Uses Android's PdfDocument API
+    - ExportButton triggers CreateDocument SAF launcher
+    - Page dimensions from pageFormat/customDimensions
+    - Writes draftContent as simple text on canvas
+
+--------------------------------------------------------------------
+  5.7  SpreadsheetEditor — Grid + Formula Engine
+--------------------------------------------------------------------
+  File: DocEditorScreen.kt (inline)
+
+  Layout:
+    ┌──────────────────────────────────────┐
+    │  Formula Bar: [=SUM(A1:B2)]          │
+    ├────┬─────────────────────────────────┤
+    │    │  A      B      C      D         │
+    ├────┼─────────────────────────────────┤
+    │  1 │ Price  Qty    Total             │
+    │  2 │ 120    3      360 (=A2*B2)      │
+    │  3 │ 45     5      225 (=A3*B3)      │
+    │  4 │ Total Cost:  585 (=SUM(C2:C3))  │
+    └────┴─────────────────────────────────┘
+
+  Cell grid: LazyVerticalGrid with GridCells.Fixed(5) columns
+  Column headers: A, B, C, D, E
+  Row headers: 1-10
+  Each cell is an OutlinedTextField
+  Formula results shown in cells (evaluated via DocViewModel.getCellValue)
+  Formula bar at top for editing selected cell's expression
+
+--------------------------------------------------------------------
+  5.8  SlidePresentationWorkspace — Slide Deck Editor
+--------------------------------------------------------------------
+  File: DocEditorScreen.kt (inline)
+
+  Layout:
+    ┌───────────────────────────────────────────┐
+    │  Slide Thumbnails (left strip, LazyColumn) │
+    │  ┌───┐  ┌────────────────────────────────┐ │
+    │  │ 1 │  │  Slide Editor Area             │ │
+    │  │ █ │  │                                │ │
+    │  │ 2 │  │  Title: [editable text]        │ │
+    │  │   │  │  Body:  [editable text]        │ │
+    │  │ 3 │  │                                │ │
+    │  └───┘  └────────────────────────────────┘ │
+    │  [+ Add Slide]  [📺 Present]  [Delete]    │
+    └───────────────────────────────────────────┘
+
+  Slide data: SlideItem(title, body, theme, layout)
+  Themes: "indigo", "crimson", "teal", "charcoal", "cyberpunk"
+  Layouts: "title_slide", "content_slide", "split_slide"
+  Each theme has a colored background in the editor
+
+--------------------------------------------------------------------
+  5.9  FullscreenPresentationView — Slideshow Mode
+--------------------------------------------------------------------
+  File: DocEditorScreen.kt (inline)
+
+  Fullscreen overlay with:
+    - Current slide displayed large
+    - Navigation arrows (left/right)
+    - Exit button
+    - Slide counter "Slide X of Y"
+    - Auto-playing in portrait orientation
+    - Background: Color(0xFF121212)
+
+--------------------------------------------------------------------
+  5.10 AIChatPanel — AI Assistant Chat
+--------------------------------------------------------------------
+  File: AIChatPanel.kt
+
+  Displayed when "AI Assistant" ribbon tab is active and isRibbonExpanded.
+
+  Layout:
+    ┌──────────────────────────────────────┐
+    │  Header: ✨ JCDocs AI  [+][📋][⚙][✕]│
+    ├──────────────────────────────────────┤
+    │  Messages (LazyColumn, auto-scroll)   │
+    │  ┌──────────────────────────────────┐│
+    │  │  WelcomeView (if no messages)    ││
+    │  │  or                              ││
+    │  │  ChatBubble (user) → right side  ││
+    │  │  ChatBubble (assistant) → left   ││
+    │  │  Loading indicator               ││
+    │  │  Error message card              ││
+    │  └──────────────────────────────────┘│
+    ├──────────────────────────────────────┤
+    │  Input: [Type a message...]   [➤]   │
+    └──────────────────────────────────────┘
+
+  WelcomeView:
+    - Icon: AutoAwesome (64dp, 30% alpha)
+    - "Welcome to JCDocs AI"
+    - "Your human-like conversational assistant."
+
+  ChatBubble:
+    - User: primary color, right-aligned, rounded corners
+    - Assistant: white/grey, left-aligned, with AI icon
+    - Width max 280dp
+
+  HistoryPanel:
+    - Full-screen overlay with conversation list
+    - Each item shows: title, last message preview, delete button
+    - Empty state: "No history yet"
+
+  SettingsPanel:
+    - Full-screen overlay
+    - Security notice card (API key storage explanation)
+    - Provider list with radio button selection
+    - Per-provider: API Key override (password field), Model ID override
+    - Test Connection button + Save Settings button
+    - Add Custom Provider form (name, key, base URL, model)
+
+--------------------------------------------------------------------
+  5.11 CreateDocumentDialog
+--------------------------------------------------------------------
+  Simple dialog with:
+    - Title input
+    - Document type selector (Word, Spreadsheet, Presentation) via dropdown
+    - Create/Cancel buttons
+
+--------------------------------------------------------------------
+  5.12 Dialogs
+--------------------------------------------------------------------
+  CustomMarginsDialog:
+    - Slider for margin value (0-60dp)
+    - Preview text showing current value
+
+  CustomSizeDialog:
+    - Width input (inches)
+    - Height input (inches)
+    - Apply button
+
+  PageNumberFormatDialog:
+    - Format dropdown: "1, 2, 3...", "a, b, c...", "i, ii, iii..."
+    - Start at input
+    - Apply button
+
+
+================================================================================
+  6. RIBBON UI SYSTEM — DETAILED BREAKDOWN
+================================================================================
+
+--------------------------------------------------------------------
+  6.1  Ribbon Tabs & Tools
+--------------------------------------------------------------------
+
+  5 tabs on the bottom nav bar:
+    1. Home    (🏠)
+    2. Insert  (➕)
+    3. AI Assistant (🤖 / ⭐)
+    4. Layout  (⚙)
+    5. Review  (✓)
+
+  getRibbonTools() function (DocEditorScreen.kt, line 832-1041):
+    Returns a flat list of RibbonTool objects with:
+      - id, title, description, icon, category, tab, actionId
+      - hasDropdown, dropdownOptions
+      - onClick / onDropdownOptionClick lambdas
+
+  Total tools defined: ~60 across all tabs.
+
+--------------------------------------------------------------------
+  6.2  Ribbon Group by Tab
+--------------------------------------------------------------------
+
+  HOME TAB (ribbon groups in expanded view):
+    ┌─────────────────────────────────────────────┐
+    │ T FONT                                      │
+    │ [Default|▼] [16|▼] [↑] [↓] [Aa] [×]        │
+    │ [B] [I] [U] [abc] [x₂] [x²] [A🔵] [🖊]    │
+    ├─────────────────────────────────────────────┤
+    │ CLIPBOARD ACTIONS                           │
+    │ [PASTE] [Cut] [Copy] [Special...]           │
+    │          [Paint Style] [History]            │
+    ├─────────────────────────────────────────────┤
+    │ PARAGRAPH FORMATTING                        │
+    │ [•] [1.] [≡] | [→] [←] [↕]                │
+    │ [≡L] [≡C] [≡R] [≡J] | [🖊] [▣]           │
+    ├─────────────────────────────────────────────┤
+    │ TEXT STYLES                                 │
+    │ [Normal] [Title] [Subtitle] [Heading 1]     │
+    │ [Heading 2] [Heading 3] [Quote] [Manage]    │
+    ├─────────────────────────────────────────────┤
+    │ EDITING & SELECTION                         │
+    │ [Find] [Replace] [Go To]                    │
+    │ [Select All] [Select Similar] [Clear Select]│
+    ├─────────────────────────────────────────────┤
+    │ AI COPILOT SUITE ✨                          │
+    │ [Rewrite] [Improve] [Summarize] [Translate] │
+    │ [Expand] [Shorten] [Generate] [Explain]     │
+    ├─────────────────────────────────────────────┤
+    │ DOCUMENT REVIEW                             │
+    │ [Spell Check] [Grammar] [Read Aloud]        │
+    │ [Track Changes] [Add Comment] [Protect Doc] │
+    ├─────────────────────────────────────────────┤
+    │ LIVE DOCUMENT METRICS                       │
+    │  Words   Chars   Paragraphs                 │
+    │  Est. Pages   Read Time                     │
+    └─────────────────────────────────────────────┘
+
+  INSERT TAB (all tools in searchable grid):
+    - Pages: Cover Page, Blank Page, Page Break
+    - Tables: Insert Table
+    - Illustrations: Picture, Shapes, Chart
+    - Links: Link, Bookmark
+    - Header & Footer: Header & Footer, Page Number (dropdown)
+    - Text: Text Box
+
+  LAYOUT TAB (all tools in searchable grid):
+    - Page Setup: Margins (dropdown), Orientation, Size, Columns, Breaks
+    - Themes: Themes, Colors, Fonts, Effects
+    - Page Background: Watermark, Page Color, Page Borders
+
+  REVIEW TAB (all tools in searchable grid):
+    - Proofing: Spelling, Thesaurus, Word Count
+    - Speech: Read Aloud
+    - Accessibility: Check Accessibility
+    - Language: Translate, Language
+    - Comments: New Comment, Delete, Show Comments
+    - Tracking: Track Changes
+
+  AI ASSISTANT TAB:
+    - Shows AIChatPanel instead of grid
+    - Ribbon tools defined: Summarize Text, Improve Tone, Fix Grammar, Suggest Topics
+
+  Tool Search:
+    - Text field at top filters tools by title, description, or category
+    - Shows grouped results from all tabs when search is active
+
+--------------------------------------------------------------------
+  6.3  executeRibbonAction — All Action Handlers
+--------------------------------------------------------------------
+  File: DocEditorScreen.kt, line 1044-1506
+
+  This function handles all ribbon tool actions via when(actionId).
+  Actions are grouped into categories:
+
+  FORMATTING:
+    bold, italic, underline, strikethrough, subscript, superscript
+      → Apply/remove DocFormatSpan via DocFormatRepository
+    color, highlight → toast (placeholder)
+    align_left, align_center, align_right, align_justify
+      → Change TextAlign on editor
+    font_incr → fontSize = 18sp
+    font_decr → fontSize = 11sp
+    clear_format → Strip all HTML-like formatting tags + spans
+
+  CLIPBOARD:
+    copy, cut, paste → toast (functionality placeholder)
+
+  THEME:
+    theme_white → white paper
+    theme_ivory → warm/ivory paper
+    theme_dark → OLED dark paper
+
+  INSERT:
+    cover_page → prepend cover page ASCII art
+    blank_page → append form feed \u000C
+    page_break → same as blank_page
+    insert_table → append markdown table
+    pictures → append markdown image tag
+    shapes → append shape placeholder text
+    icons → append star character
+
+  LAYOUT:
+    margins_normal/narrow/wide → set pageMargins Dp
+    portrait/landscape → set isLandscape
+    col_1/col_2/col_3 → set columnCount
+    Also handles dropdown sub-actions:
+      margins:Normal, margins:Narrow, etc.
+      orientation:Landscape, orientation:Portrait
+      size:A4, size:Letter, size:Custom Size...
+      breaks:Page Break, etc.
+
+  REVIEW:
+    review_stats → word/sentence/char/reading time via toast
+    spell_check → replace common typos (teh→the, recieve→receive, etc.)
+    read_aloud → TTS speech (start/stop)
+    translate_preview → English→Spanish word replacement demo
+
+  AI ASSISTANT (local simulated):
+    ai_summarize → extract first/middle/last lines as bullets
+    ai_improve → prepend "PROFESSIONAL POLISH" tone
+    ai_grammar → trim whitespace (placeholder)
+    ai_topics → append 3 recommended research topics
+
+  PAGE NUMBER:
+    page_number:Format Page Numbers → opens dialog
+    page_number:Remove Page Numbers → clears position
+    page_number:Top of Page / Bottom of Page → position sub-menu
+    page_number:Current Position → insert " 1 "
+
+--------------------------------------------------------------------
+  6.4  Bottom Navigation Bar
+--------------------------------------------------------------------
+  5 tabs displayed as icon+label columns:
+    Home, Insert, AI Assistant, Layout, Review
+
+  Tapping selected tab toggles ribbon open/close.
+  Tapping inactive tab opens it.
+  Active tab icon/name highlighted with doc-type color.
+  Export button (PDF) in ribbon header area.
+
+
+================================================================================
+  7. DATA FLOW DIAGRAMS
+================================================================================
+
+--------------------------------------------------------------------
+  7.1  Document Edit Flow
+--------------------------------------------------------------------
+
+  User types in editor
+       │
+       ▼
+  onContentChange(newText) ──→ DocViewModel.updateDraftContent()
+       │                            │
+       │                            ▼
+       │                        _draftContent.value = newText
+       │                            │
+       │                            ▼
+       │                        saveChangesLocally()
+       │                            │
+       │                            ▼
+       │                        repository.insertDocument(updated)
+       │                            │
+       │                            ▼
+       │                        Room DB (documents table) updated
+       │
+       ▼
+  LaunchedEffect(draftContent) syncs TextFieldValue
+       │
+       ▼
+  UI recomposes with new TextFieldValue
+
+  Note: Every keystroke triggers DB write via saveChangesLocally().
+  This means auto-save is real-time with no debouncing.
+
+--------------------------------------------------------------------
+  7.2  Spreadsheet Formula Evaluation Flow
+--------------------------------------------------------------------
+
+  User edits cell "C2" with "=A2*B2"
+       │
+       ▼
+  DocViewModel.updateCellExpression("C2", "=A2*B2")
+       │
+       ▼
+  _sheetData updated (Map<String, String>)
+       │
+       ▼
+  UI recomposes with new data
+       │
+       ▼
+  getCellValue("C2") called for display
+       │
+       ▼
+  evaluateCell("C2", sheetData, visited=[])
+       │
+       ├── expression = "=A2*B2"
+       ├── Not SUM, not AVG
+       ├── Math operator: *
+       │     ├── evaluateCell("A2") → "120"
+       │     ├── evaluateCell("B2") → "3"
+       │     └── 120.0 * 3.0 = 360.0
+       └── Returns "360"
+       │
+       ▼
+  Cell displays "360"
+
+  Supported formulas:
+    - =SUM(range)   e.g. =SUM(A1:C3)
+    - =AVG(range)   e.g. =AVG(B2:B10)
+    - Arithmetic: =A1*B2, =A1+B2, =A1-B2, =A1/B2
+    - Simple reference: =A1 (copies value)
+    - Circular ref detection → "#REF!"
+
+--------------------------------------------------------------------
+  7.3  AI Chat Message Flow
+--------------------------------------------------------------------
+
+  User taps send
+       │
+       ▼
+  DocViewModel.sendMessage(text)
+       │
+       ├── If no active conversation → createConversation("New Chat")
+       │
+       ▼
+  performMessageSend(conv, text)
+       │
+       ▼
+  1. Save user message to Room (aiRepository.saveMessage)
+  2. Load message history (chatDao.getMessagesList)
+  3. Map to AiMessage list
+  4. Get active provider (aiRepository.getActiveProvider)
+       │
+       ▼
+  provider.chat(history)
+       │
+       ├── GeminiAiProvider → Gemini API HTTP call
+       ├── OpenRouterAiProvider → OpenRouter API (model fallback chain)
+       └── CustomAiProvider → OpenAI-compatible API
+       │
+       ▼
+  onSuccess:
+    - Save AI response message to Room
+    - Auto-rename conversation if title was "New Chat"
+    - Clear any error state
+  onFailure:
+    - Set _aiError.value with error message
+    - If OpenRouter auth error, show hint about missing key
+
+--------------------------------------------------------------------
+  7.4  Undo/Redo Flow
+--------------------------------------------------------------------
+
+  User makes edit
+       │
+       ▼
+  pushSnapshot() called
+       │
+       ▼
+  undoRedoManager.pushState(captureSnapshot())
+       │
+       ├── Captures: title, content, TextFieldValue, spans,
+       │   editorTheme, margins, columns, alignment, fontSize,
+       │   landscape, pageNumber position/format/startAt
+       ├── Deep copies spans list
+       ├── Deduplicates consecutive identical states
+       └── Max 500 states
+       │
+       ▼
+  User taps Undo
+       │
+       ▼
+  undoRedoManager.undo(currentSnapshot)
+       │
+       ├── Push current state to redoStack
+       └── Pop from undoStack
+       │
+       ▼
+  Restore all state fields
+  DocFormatRepository.getSpans().clear() + addAll(restored)
+  UI recomposes
+
+
+================================================================================
+  8. DATABASE SCHEMA (Room)
+================================================================================
+
+--------------------------------------------------------------------
+  8.1  documents Table
+--------------------------------------------------------------------
+
+  ┌──────────────┬──────────┬──────────────────────────────────┐
+  │ Column       │ Type     │ Notes                            │
+  ├──────────────┼──────────┼──────────────────────────────────┤
+  │ id           │ INTEGER  │ PRIMARY KEY, autoGenerate        │
+  │ title        │ TEXT     │ Document title                   │
+  │ type         │ TEXT     │ "word", "sheet", or "slide"      │
+  │ content      │ TEXT     │ Raw text for word, JSON for      │
+  │              │          │ sheet/slide                      │
+  │ updatedAt    │ INTEGER  │ epoch millis                     │
+  │ createdAt    │ INTEGER  │ epoch millis                     │
+  │ isFavorite   │ INTEGER  │ 0 or 1 (Boolean)                 │
+  └──────────────┴──────────┴──────────────────────────────────┘
+
+  Queries:
+    - getAllDocuments() ORDER BY updatedAt DESC
+    - getDocumentById(id)
+    - getDocumentsByType(type) ORDER BY updatedAt DESC
+    - searchDocuments(query) LIKE '%query%' ORDER BY updatedAt DESC
+
+--------------------------------------------------------------------
+  8.2  chat_conversations Table
+--------------------------------------------------------------------
+
+  ┌────────────────┬──────────┬────────────────────────────────┐
+  │ Column         │ Type     │ Notes                          │
+  ├────────────────┼──────────┼────────────────────────────────┤
+  │ id             │ INTEGER  │ PRIMARY KEY, autoGenerate      │
+  │ title          │ TEXT     │ Auto-named from first message  │
+  │ lastMessage    │ TEXT     │ Preview text (100 chars)       │
+  │ createdAt      │ INTEGER  │ epoch millis                   │
+  │ updatedAt      │ INTEGER  │ epoch millis                   │
+  │ isArchived     │ INTEGER  │ 0 or 1                         │
+  │ activeProviderId│ INTEGER │ Nullable FK to provider config │
+  └────────────────┴──────────┴────────────────────────────────┘
+
+--------------------------------------------------------------------
+  8.3  chat_messages Table
+--------------------------------------------------------------------
+
+  ┌────────────────┬──────────┬────────────────────────────────┐
+  │ Column         │ Type     │ Notes                          │
+  ├────────────────┼──────────┼────────────────────────────────┤
+  │ id             │ INTEGER  │ PRIMARY KEY, autoGenerate      │
+  │ conversationId │ INTEGER  │ FK → chat_conversations(id)    │
+  │ role           │ TEXT     │ "user" or "assistant"          │
+  │ content        │ TEXT     │ Message body text              │
+  │ mediaUrl       │ TEXT     │ Nullable                       │
+  │ mediaType      │ TEXT     │ "image", "video", "text"       │
+  │ createdAt      │ INTEGER  │ epoch millis                   │
+  └────────────────┴──────────┴────────────────────────────────┘
+
+  Index: conversationId
+  Foreign key: CASCADE on delete
+
+--------------------------------------------------------------------
+  8.4  ai_provider_configs Table
+--------------------------------------------------------------------
+
+  ┌──────────────┬──────────┬──────────────────────────────────┐
+  │ Column       │ Type     │ Notes                            │
+  ├──────────────┼──────────┼──────────────────────────────────┤
+  │ id           │ INTEGER  │ PRIMARY KEY, autoGenerate        │
+  │ name         │ TEXT     │ "Gemini", "OpenRouter", custom   │
+  │ apiKey       │ TEXT     │ Encrypted at rest by device      │
+  │ baseUrl      │ TEXT     │ Nullable (for custom providers)  │
+  │ modelId      │ TEXT     │ Nullable (model override)        │
+  │ isActive     │ INTEGER  │ 0 or 1 (only one active at a time)│
+  │ isDefault    │ INTEGER  │ 0 or 1 (built-in providers)      │
+  └──────────────┴──────────┴──────────────────────────────────┘
+
+  Built-in providers (created on first launch):
+    1. Gemini — baseUrl="https://generativelanguage.googleapis.com/"
+                modelId="gemini-3.5-flash", isActive=true, isDefault=true
+    2. OpenRouter — baseUrl="https://openrouter.ai/api/v1/"
+                    modelId="google/gemini-2.5-flash:free", isActive=false, isDefault=true
+
+
+================================================================================
+  9. AI PROVIDER INTEGRATIONS
+================================================================================
+
+--------------------------------------------------------------------
+  9.1  AiProvider Interface
+--------------------------------------------------------------------
+
+  interface AiProvider {
+    suspend fun chat(messages: List<AiMessage>, systemPrompt: String? = null): Result<AiResponse>
+    suspend fun testConnection(): Boolean
+  }
+
+  AiMessage(role: String, content: String, mediaUrl: String?, mediaType: String?)
+  AiResponse(content: String, mediaUrl: String?, mediaType: String?, modelUsed: String)
+
+--------------------------------------------------------------------
+  9.2  GeminiAiProvider
+--------------------------------------------------------------------
+
+  Uses: Google Gemini API (generativelanguage.googleapis.com)
+  Model: gemini-3.5-flash
+  Auth: API key via query parameter ?key=API_KEY
+  API: POST /v1beta/models/gemini-3.5-flash:generateContent
+
+  Request format:
+    {
+      "contents": [{ "role": "user"/"model", "parts": [{ "text": "..." }] }],
+      "systemInstruction": { "parts": [{ "text": "..." }] }  (optional)
+    }
+
+  Default key source: BuildConfig.GEMINI_API_KEY (from .env secrets)
+  Timeout: connect 30s, read 60s, write 30s
+
+--------------------------------------------------------------------
+  9.3  OpenRouterAiProvider
+--------------------------------------------------------------------
+
+  Uses: OpenRouter API (openrouter.ai/api/v1)
+  Auth: Bearer token via Authorization header
+  Headers: HTTP-Referer, X-Title for rankings
+
+  Model fallback chain (12 free models):
+    1. google/gemini-2.5-flash:free
+    2. google/gemini-2.5-pro:free
+    3. deepseek/deepseek-r1:free
+    4. openai/gpt-oss-20b:free
+    5. deepseek/deepseek-chat:free
+    6. meta-llama/llama-3.3-70b-instruct:free
+    7. meta-llama/llama-3.1-8b-instruct:free
+    8. qwen/qwen-2.5-72b-instruct:free
+    9. qwen/qwen-2.5-coder-32b-instruct:free
+   10. mistralai/mistral-7b-instruct:free
+   11. microsoft/phi-3-medium-128k-instruct:free
+   12. openrouter/auto (last resort)
+
+  Breaks on 401/403 (auth error — no point retrying)
+  Error messages include key preview for debugging
+
+--------------------------------------------------------------------
+  9.4  CustomAiProvider
+--------------------------------------------------------------------
+
+  Uses: OpenAI-compatible API
+  Default: https://api.openai.com/v1/ with gpt-3.5-turbo
+  Auth: Bearer token
+  Reuses OpenRouterApi interface (same request/response format)
+
+  Configurable by user: name, apiKey, baseUrl, modelId
+  Used for: Groq, Lambda, DeepSeek, Ollama, etc.
+
+
+================================================================================
+  10. STATE MANAGEMENT
+================================================================================
+
+--------------------------------------------------------------------
+  10.1 ViewModel StateFlows
+--------------------------------------------------------------------
+
+  DocViewModel uses MutableStateFlow for mutable state and
+  exposes as StateFlow for the UI layer.
+
+  Derived/computed flows:
+    - documents = combine(allDocuments, searchQuery, selectedTypeFilter)
+    - aiMessages = activeConversation.flatMapLatest { getMessages(it.id) }
+
+  All state reads use collectAsStateWithLifecycle() in composables.
+
+--------------------------------------------------------------------
+  10.2 Compose State Hoisting Pattern
+--------------------------------------------------------------------
+
+  Each composable receives state as parameters and callbacks as lambdas.
+  Example SidebarExplorer signature:
+    (documents, selectedDoc, draftTitle, searchQuery, selectedFilter,
+     onSearchChange, onFilterChange, onDocSelect, onDocDelete,
+     onDocFavoriteToggle, onCreateClick, ...)
+
+  WorkspacePane has extensive local state (mutableStateOf):
+    editorTheme, pageMargins, columnCount, textAlignment, fontSize,
+    isLandscape, editorTextFieldValue, activeRibbonTab, etc.
+
+--------------------------------------------------------------------
+  10.3 DocFormatSpan System
+--------------------------------------------------------------------
+
+  DocFormatSpan(start, end, type, value) — immutable-ish data class
+  DocFormatRepository — singleton object with per-docId span storage
+
+  Key operations:
+    - getSpans(docId) → SnapshotStateList<DocFormatSpan>
+    - applySpan(docId, type, value, start, end) — merges overlapping
+    - removeSpanRange(docId, start, end) — removes/truncates
+    - removeSpanTypeRange(docId, type, start, end) — type-specific removal
+    - hasSpan(docId, type, start, end) — check if selection fully covered
+    - shiftSpans(docId, changeStart, deleted, inserted) — adjust on text edit
+
+  Formatting types: "bold", "italic", "underline", "strikethrough",
+                    "subscript", "superscript", "color", "highlight"
+
+
+================================================================================
+  11. THEME & STYLING
+================================================================================
+
+--------------------------------------------------------------------
+  11.1 Color Palette
+--------------------------------------------------------------------
+
+  Brand Colors:
+    ┌───────────────────────┬────────────┬──────────────────────────┐
+    │ Name                  │ Hex        │ Usage                    │
+    ├───────────────────────┼────────────┼──────────────────────────┤
+    │ OnlyOfficePrimary     │ #DF4A32    │ Primary (terracotta red) │
+    │ OnlyOfficeSecondary   │ #333333    │ Dark charcoal            │
+    │ OnlyOfficeAccent      │ #4DA06F    │ Forest green accent      │
+    ├───────────────────────┼────────────┼──────────────────────────┤
+    │ DocWordColor          │ #E2574C    │ Word doc type            │
+    │ DocSheetColor         │ #4DA06F    │ Sheet doc type           │
+    │ DocSlideColor         │ #E08B3A    │ Slide doc type           │
+    ├───────────────────────┼────────────┼──────────────────────────┤
+    │ LightPaneBg           │ #F9F9FA    │ Light editor bg          │
+    │ DarkPaneBg            │ #18181A    │ Dark editor bg           │
+    └───────────────────────┴────────────┴──────────────────────────┘
+
+--------------------------------------------------------------------
+  11.2 Typography
+--------------------------------------------------------------------
+
+  Only bodyLarge customized:
+    FontFamily.Default, fontWeight=Normal, fontSize=16.sp,
+    lineHeight=24.sp, letterSpacing=0.5.sp
+
+--------------------------------------------------------------------
+  11.3 Theme (Light/Dark/Dynamic)
+--------------------------------------------------------------------
+
+  Theme.kt:
+    - Uses Material 3 color schemes
+    - Dynamic color on Android 12+ (API 31+)
+    - Falls back to dark/light scheme with OnlyOfficePrimary
+
+  Dark ColorScheme:
+    primary=OnlyOfficePrimary, background=#121212, surface=#1E1E1E
+    onBackground=onSurface=#E3E3E3
+
+  Light ColorScheme:
+    primary=OnlyOfficePrimary, background=#F6F8FA, surface=White
+    onBackground=onSurface=#1C1B1F
+
+
+================================================================================
+  12. BUILD CONFIGURATION
+================================================================================
+
+  File: app/build.gradle.kts
+    compileSdk: 36
+    minSdk: 24
+    targetSdk: 36
+    Compose enabled
+    BuildConfig generated
+    KSP for Room + Moshi
+    Secrets plugin reads .env file
+
+  File: gradle.properties
+    JVM args: -Xmx4g
+    Parallel builds: true
+    Configuration cache: enabled
+    Non-transitive R class: true
+    Max workers: 4
+    Kotlin compilation in-process: true
+
+  File: settings.gradle.kts
+    Plugin repos: Google, Maven Central, Gradle Plugin Portal
+    foojay resolver convention for JDK
+
+
+================================================================================
+  13. DEPENDENCIES
+================================================================================
+
+  Build Plugins:
+    - com.android.application 9.1.1
+    - org.jetbrains.kotlin.plugin.compose 2.2.10
+    - com.google.devtools.ksp 2.3.5
+    - io.github.takahirom.roborazzi 1.59.0
+    - com.google.android.libraries.mapsplatform.secrets-gradle-plugin 2.0.1
+
+  Runtime (active):
+    - AndroidX Core KTX 1.18.0
+    - Activity Compose 1.10.1
+    - Compose BOM 2024.09.00 (Material 3, UI, Icons extended)
+    - Lifecycle Runtime KTX + Compose + ViewModel 2.8.7
+    - Room Runtime + KTX 2.7.0
+    - Retrofit 2.12.0 + Moshi Converter
+    - Moshi Kotlin 1.15.2
+    - OkHttp 4.10.0 + Logging interceptor
+    - Kotlinx Coroutines Core + Android 1.10.2
+    - Firebase BOM 34.12.0 (pinned but not actively imported)
+
+  KSP Processors:
+    - Room Compiler 2.7.0
+    - Moshi Kotlin Codegen 1.15.2
+
+  Test:
+    - JUnit 4.13.2
+    - AndroidX Test Ext JUnit 1.3.0
+    - Espresso Core 3.7.0
+    - Compose UI Test JUnit4 (BOM)
+    - AndroidX Test Core 1.6.1 + Runner 1.6.2
+    - Robolectric 4.16.1
+    - Roborazzi + Compose 1.59.0
+    - Kotlinx Coroutines Test 1.10.2
+
+  Commented-out (available but unused):
+    - CameraX
+    - Navigation Compose
+    - Coil
+    - DataStore Preferences
+    - Firebase AI
+    - Play Services Location
+    - Accompanist Permissions
+
+
+================================================================================
+  14. TESTING
+================================================================================
+
+  Unit Tests:
+    1. ExampleUnitTest.kt — basic 2+2=4 sanity test
+    2. RibbonActionTest.kt — tests DocFormatRepository span splitting logic
+       - Test: splitSpanCoversFullSelection
+       - Test: removeSpanFromStart
+       - Test: removeSpanFromEnd
+       - Uses Robolectric
+
+  Instrumented Tests:
+    1. ExampleInstrumentedTest.kt — verifies app context package name
+
+  Screenshot Tests (Roborazzi):
+    - greeting.png reference image in src/test/screenshots/
+
+
+================================================================================
+  END OF ARCHITECTURE DOCUMENT
+================================================================================

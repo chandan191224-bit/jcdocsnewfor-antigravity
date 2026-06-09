@@ -1,0 +1,875 @@
+================================================================================
+  HOME TAB RIBBON — HOW EACH FEATURE WORKS (IMPLEMENTATION GUIDE)
+================================================================================
+  File: JCdocs_HOME_TAB_FEATURES_EXPLAINED.txt
+  Source: app/src/main/java/com/example/ui/DocEditorScreen.kt
+          app/src/main/java/com/example/viewmodel/DocViewModel.kt
+          app/src/main/java/com/example/ui/DocUndoRedoManager.kt
+  Generated: 2026-06-09
+================================================================================
+
+
+TABLE OF CONTENTS
+=================
+  1.  BOLD / ITALIC / UNDERLINE
+  2.  STRIKETHROUGH / SUBSCRIPT / SUPERSCRIPT
+  3.  FONT COLOR / HIGHLIGHT
+  4.  FONT FAMILY DROPDOWN
+  5.  FONT SIZE DROPDOWN
+  6.  INCREASE / DECREASE FONT SIZE
+  7.  CHANGE CASE (Aa)
+  8.  CLEAR FORMATTING (×)
+  9.  CLIPBOARD: PASTE / CUT / COPY
+  10. PARAGRAPH: ALIGN LEFT / CENTER / RIGHT / JUSTIFY
+  11. PARAGRAPH: BULLETS / NUMBERS / MULTILEVEL
+  12. PARAGRAPH: INDENT / LINE SPACING / SHADING / BORDERS
+  13. TEXT STYLES (Normal, Title, Heading 1-3, Quote)
+  14. EDITING: FIND / REPLACE / GO TO / SELECT ALL
+  15. AI COPILOT (Summarize, Improve, Grammar, Topics, Translate)
+  16. DOCUMENT REVIEW: SPELL CHECK
+  17. DOCUMENT REVIEW: READ ALOUD (TTS)
+  18. LIVE DOCUMENT METRICS
+  19. THEME WHITE / IVORY / DARK
+  20. UNDO / REDO INTEGRATION
+  21. DocFormatSpan SYSTEM — DEEP DIVE
+  22. EXPORT TO PDF
+
+
+================================================================================
+  1. BOLD / ITALIC / UNDERLINE
+================================================================================
+
+  File: DocEditorScreen.kt — executeRibbonAction() lines 1080-1098
+
+  ─── HOW IT WORKS ───
+
+  These use the DocFormatSpan system to mark formatted ranges in the text.
+
+  Flow:
+    User selects text → taps Bold button
+       │
+       ▼
+    actionId = "bold" matched in executeRibbonAction
+       │
+       ▼
+    applyFormatting lambda called with type="bold", value="", debugName="Bold"
+       │
+       ├─ if textFieldValue != null AND selection is not collapsed:
+       │     │
+       │     ├─ Check DocFormatRepository.hasSpan(docId, "bold", start, end)
+       │     │     │
+       │     │     ├─ if TRUE → REMOVE bold (toggle off)
+       │     │     │    DocFormatRepository.removeSpanTypeRange(docId, "bold", start, end)
+       │     │     │    Toast: "Bold style removed from selection"
+       │     │     │
+       │     │     └─ if FALSE → APPLY bold (toggle on)
+       │     │          DocFormatRepository.applySpan(docId, "bold", "", start, end)
+       │     │          Toast: "Bold style applied to selection"
+       │     │
+       │     └─ Trigger recomposition:
+       │          onTextFieldValueChange(textFieldValue.copy())
+       │
+       └─ if selection is collapsed:
+             Toast: "Please select text to apply Bold"
+
+  ─── DocFormatRepository.applySpan() Logic ───
+
+    1. If start >= end, return early (no selection)
+    2. Iterate existing spans of same type+value:
+       - If span overlaps → merge: expand newStart/newEnd, remove old span
+    3. Add merged DocFormatSpan(newStart, newEnd, type, value)
+
+    This ensures no overlapping spans of the same type — they automatically
+    merge into one contiguous span.
+
+  ─── DocFormatRepository.removeSpanTypeRange() Logic ───
+
+    1. Iterate all spans
+    2. For each span of matching type within selection range:
+       - Fully inside selection → remove span entirely
+       - Covers selection entirely → split into two spans (before and after)
+       - Overlaps start → truncate end to selection start
+       - Overlaps end → shift start to selection end
+
+  ─── Rendering (WordDocumentEditor) ───
+
+    The Word Document Editor uses BasicTextField with AnnotatedString
+    built from spans. Each DocFormatSpan is converted to SpanStyle:
+      - "bold" → FontWeight.Bold
+      - "italic" → FontStyle.Italic
+      - "underline" → TextDecoration.Underline
+
+    The AnnotatedString is rebuilt on every recomposition from the
+    raw text + DocFormatRepository.getSpans(docId).
+
+
+================================================================================
+  2. STRIKETHROUGH / SUBSCRIPT / SUPERSCRIPT
+================================================================================
+
+  File: DocEditorScreen.kt — RibbonIconButton onClick handlers
+       (around lines 2559-2606)
+
+  ─── HOW IT WORKS ───
+
+  These are NOT using DocFormatSpan. They directly modify the text content
+  by appending markup strings:
+
+    Strikethrough → appends " ~~Strikethrough~~" to draftContent
+    Subscript     → appends " <sub>sub</sub>" to draftContent
+    Superscript   → appends " <sup>super</sup>" to draftContent
+
+  Flow:
+    ├─ User taps Strikethrough
+    │    onContentChange(draftContent + " ~~Strikethrough~~")
+    │    Toast: "Strikethrough formatting applied"
+    │
+    ├─ User taps Subscript
+    │    onContentChange(draftContent + " <sub>sub</sub>")
+    │    Toast: "Subscript formatting applied"
+    │
+    └─ User taps Superscript
+         onContentChange(draftContent + " <sup>super</sup>")
+         Toast: "Superscript formatting applied"
+
+  ─── ISSUE ───
+
+  These always append at the END of the document. They do NOT apply
+  formatting to a text selection. This is a known limitation/placeholder
+  implementation. The markup is stripped by clear_format.
+
+  The clear_format action removes these by:
+    .replace("~~", "")
+    .replace("<sub>", "").replace("</sub>", "")
+    .replace("<sup>", "").replace("</sup>", "")
+
+
+================================================================================
+  3. FONT COLOR / HIGHLIGHT
+================================================================================
+
+  File: DocEditorScreen.kt — RibbonIconButton onClick handlers
+       (around lines 2607-2637)
+
+  ─── HOW IT WORKS ───
+
+  These are PLACEHOLDER implementations. They only show a toast:
+
+    Font Color → Toast: "Font color changed to primary accent!"
+    Highlight  → Toast: "Text highlight applied!"
+
+  ─── CODE ───
+
+  RibbonIconButton(
+    contentDescription = "Font Color",
+    onClick = {
+        coroutineScope.launch {
+            snackbarHostState.showSnackbar(
+                "Font color changed to primary accent!"
+            )
+        }
+    },
+    ...
+  )
+
+  No actual font color or highlight is applied to the text.
+  These are marked for future implementation.
+
+
+================================================================================
+  4. FONT FAMILY DROPDOWN
+================================================================================
+
+  File: DocEditorScreen.kt — RibbonDropdown lines 2375-2405
+
+  ─── HOW IT WORKS ───
+
+  Options: Default, Aptos, Calibri, Arial, Times New Roman, Courier New,
+           Georgia, Space Grotesk, JetBrains Mono
+
+  When user selects a font:
+    1. activeFontFamily = selected font name
+    2. If font != "Default":
+       - Get current text selection (lastSelection)
+       - If text is selected:
+           val prefix = "<font face=\"$fontName\">"
+           val suffix = "</font>"
+           Insert prefix + selectedText + suffix around selection
+       - If no selection:
+           Insert <font face="FontName"></font> at cursor position
+    3. If font == "Default":
+       - Call onAction("clear_format") to strip all font tags
+    4. Show snackbar: "Font family changed to: FontName"
+
+  ─── RENDERING NOTE ───
+
+  The <font face="..."> tag is NOT actually rendered by Compose's
+  BasicTextField. It's a plain-text markup that only shows as raw text
+  in the editor. The font family choice is stored for reference but
+  the actual visual font change is NOT implemented.
+
+  This is a content-markup approach, not a true WYSIWYG font selector.
+
+
+================================================================================
+  5. FONT SIZE DROPDOWN
+================================================================================
+
+  File: DocEditorScreen.kt — RibbonDropdown lines 2407-2435
+
+  ─── HOW IT WORKS ───
+
+  Options: 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 48
+
+  When user selects a size:
+    1. activeFontSize = selected size string
+    2. fontSize = selectedSize.sp (updates the TextUnit state)
+    3. Insert <font size="N">...</font> markup around selection/cursor
+       - Same pattern as font family (prefix + suffix wrapping)
+    4. Show snackbar: "Font size set to: Nsp"
+
+  The fontSize state variable IS used by WordDocumentEditor to set
+  the default text size in the BasicTextField's TextStyle, so the
+  base font size DOES change visually.
+
+  However, individual <font size="N"> tags throughout the text are
+  not parsed or rendered — they're plain text markup only.
+
+
+================================================================================
+  6. INCREASE / DECREASE FONT SIZE
+================================================================================
+
+  File: DocEditorScreen.kt — RibbonIconButton onClick handlers
+       (around lines 2437-2469)
+
+  ─── HOW IT WORKS ───
+
+  These adjust the fontSize state variable (TextUnit):
+
+    Increase:
+      val currentSize = fontSize.value.toInt()
+      val newSize = if (currentSize < 48) currentSize + 2 else 48
+      fontSize = newSize.sp
+      activeFontSize = newSize.toString()
+      onAction("font_incr")  // calls executeRibbonAction
+        → which sets fontSize = 18.sp (fixed, NOT incremental)
+
+    Decrease:
+      val currentSize = fontSize.value.toInt()
+      val newSize = if (currentSize > 8) currentSize - 2 else 8
+      fontSize = newSize.sp
+      activeFontSize = newSize.toString()
+      onAction("font_decr")
+        → which sets fontSize = 11.sp (fixed, NOT incremental)
+
+  ─── NOTE ───
+
+  There's a conflict: the executeRibbonAction handler sets font_incr to
+  a FIXED 18sp and font_decr to a FIXED 11sp. But the inline onClick
+  handlers also manually increment/decrement fontSize by ±2.
+
+  The executeRibbonAction runs SECOND and overrides the local change.
+  So effectively:
+    - Increase ALWAYS sets to 18sp (ignoring actual current size)
+    - Decrease ALWAYS sets to 11sp (ignoring actual current size)
+
+  This is a bug — the local increment/decrement logic is wasted
+  because executeRibbonAction overwrites it afterward.
+
+
+================================================================================
+  7. CHANGE CASE (Aa)
+================================================================================
+
+  File: DocEditorScreen.kt — RibbonIconButton onClick handler
+       (around lines 2471-2510)
+
+  ─── HOW IT WORKS ───
+
+  Cycles through three case modes:
+
+    if selected:
+      ┌─ selectedStr == selectedStr.uppercase() → convert to lowercase
+      ├─ selectedStr == selectedStr.lowercase() → convert to Title case
+      └─ else                                   → convert to UPPERCASE
+
+    if no selection (entire document):
+      Same logic applied to full draftContent
+
+  Implementation:
+    1. Get selection range from editorTextFieldValue.selection
+    2. Extract selected text
+    3. Determine current case → toggle to next case
+    4. Replace text in TextFieldValue
+    5. Call onContentChange(newText)
+    6. Show snackbar: "Changed text case formatting"
+
+
+================================================================================
+  8. CLEAR FORMATTING (×)
+================================================================================
+
+  File: DocEditorScreen.kt — executeRibbonAction() lines 1166-1223
+
+  ─── HOW IT WORKS ───
+
+  This is the most complex single formatting action. It:
+
+    1. STRIPS ALL HTML-LIKE MARKUP TAGS from text:
+       ** * <u> </u> ~~ <sub> </sub> <sup> </sup>
+       <font...> </font> <span...> </span> <mark> </mark>
+
+    2. CLEARS ALL DocFormatSpans:
+       DocFormatRepository.removeSpansRange(docId, 0, text.length)
+
+    3. RESETS TO DEFAULTS:
+       onAlignmentChange(TextAlign.Left)
+       onFontSizeChange(14.sp)
+
+    If text is selected: only clears formatting within selection
+    If no selection: clears formatting on ENTIRE document
+
+  ─── REGEX USED ───
+
+    "<font[^>]*>".toRegex()  → matches <font face="Arial">, <font size="12">, etc.
+    "<span[^>]*>".toRegex()  → matches <span style="...">
+
+
+================================================================================
+  9. CLIPBOARD: PASTE / CUT / COPY
+================================================================================
+
+  File: DocEditorScreen.kt — executeRibbonAction() lines 1109-1125
+       and Clipboard Group inline handlers lines 2869-2963
+
+  ─── HOW IT WORKS ───
+
+  These are ALL PLACEHOLDER implementations with toasts only.
+  No actual Android ClipboardManager is used.
+
+    PASTE button:
+      - Appends "[Pasted Clipboard Data]" to draftContent
+      - Toast: "Pasted active clipboard data into draft content"
+
+    CUT button:
+      - Toast: "Content cut to secure clipboard draft"
+
+    COPY button:
+      - Toast: "Copied full draft to clipboard!"
+
+    Special button:
+      - Toast: "Paste Special: Unformatted UTF-8 Text applied"
+
+    Paint Style button:
+      - Toast: "Format Painter loaded!"
+
+    History button:
+      - Toast: "Opened Clipboard History queue (3 items stored)"
+
+  ─── FUTURE IMPROVEMENT ───
+
+  To implement real clipboard:
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE)
+        as ClipboardManager
+    val clip = ClipData.newPlainText("label", text)
+    clipboard.setPrimaryClip(clip)
+
+
+================================================================================
+  10. PARAGRAPH: ALIGN LEFT / CENTER / RIGHT / JUSTIFY
+================================================================================
+
+  File: DocEditorScreen.kt — executeRibbonAction() lines 1126-1141
+
+  ─── HOW IT WORKS ───
+
+  These update the textAlignment state variable:
+
+    align_left   → onAlignmentChange(TextAlign.Left)
+    align_center → onAlignmentChange(TextAlign.Center)
+    align_right  → onAlignmentChange(TextAlign.Right)
+    align_justify→ onAlignmentChange(TextAlign.Justify)
+
+  This state is passed down to WordDocumentEditor and applied to the
+  BasicTextField's textStyle:
+    TextAlign.Left / Center / Right / Justify
+
+  The alignment applies to the ENTIRE document content, not just the
+  current paragraph. This is a limitation — true paragraph-level
+  alignment would require detecting paragraph boundaries.
+
+  Toast feedback: "Text alignment set to Left/Center/Right/Justified"
+
+
+================================================================================
+  11. PARAGRAPH: BULLETS / NUMBERS / MULTILEVEL
+================================================================================
+
+  File: DocEditorScreen.kt — IconBtn composite handlers
+       (around lines 2992-2993)
+
+  ─── HOW IT WORKS ───
+
+  These are PLACEHOLDER — they call executeRibbonAction with actionIds
+  that are NOT handled in the when block, so they fall to the empty
+  else branch and do nothing visible except the snackbar toast.
+
+  In the IconBtn composite:
+    IconBtn(Icons.Default.FormatListBulleted, "Bullets") {
+      onAction("bullets")
+    }
+
+  But "bullets" is NOT a defined actionId in executeRibbonAction().
+  Same for "numbers", "multilevel", "indent_dec", "indent_inc".
+
+  They fall through to the final `else -> {}` branch which does nothing.
+
+  ─── FUTURE IMPROVEMENT ───
+
+  Would need to:
+    1. Detect current line/paragraph
+    2. Prepend "- " for bullets, "1. " for numbers
+    3. Track nesting level for multilevel
+
+
+================================================================================
+  12. PARAGRAPH: INDENT / LINE SPACING / SHADING / BORDERS
+================================================================================
+
+  File: DocEditorScreen.kt
+
+  ─── HOW IT WORKS ───
+
+  ALL are placeholder implementations:
+
+    dec_indent → onAction("indent_dec") → UNHANDLED (does nothing)
+    inc_indent → onAction("indent_inc") → UNHANDLED (does nothing)
+    line_spacing → actionId "line_spacing" matched
+        Toast: "Line spacing options (1.0, 1.15, 1.5, 2.0)"
+        No actual line spacing change.
+    shading → onAction("shading") → UNHANDLED (does nothing)
+    borders → onAction("borders") → UNHANDLED (does nothing)
+
+  These are UI placeholders with no backend implementation.
+
+
+================================================================================
+  13. TEXT STYLES (Normal, Title, Heading 1-3, Quote)
+================================================================================
+
+  File: DocEditorScreen.kt — Styles group around lines 3020-3076
+
+  ─── HOW IT WORKS ───
+
+  Each style button directly modifies the content by appending markdown:
+
+    ┌─────────────┬────────────────────────────────────┐
+    │ Style       │ Action                              │
+    ├─────────────┼────────────────────────────────────┤
+    │ Normal      │ Appends "\n\nRegular document..."   │
+    │ Title       │ Appends "\n\n# Title Heading"       │
+    │ Subtitle    │ Appends "\n\n## Secondary Section"  │
+    │ Heading 1   │ Appends "\n\n### Heading Tier 1"   │
+    │ Heading 2   │ Appends "\n\n#### Heading Tier 2"  │
+    │ Heading 3   │ Appends "\n\n##### Heading Tier 3" │
+    │ Quote       │ Appends "\n\n> Inserted blockquote" │
+    │ Manage      │ Toast only                          │
+    └─────────────┴────────────────────────────────────┘
+
+  Each appends to document content (not wraps selection), so it always
+  adds the style at the END of the document.
+
+  Toast: "Style template 'XXX' applied successfully"
+
+
+================================================================================
+  14. EDITING: FIND / REPLACE / GO TO / SELECT ALL
+================================================================================
+
+  File: DocEditorScreen.kt — Editing group around lines 3079-3115
+
+  ─── HOW IT WORKS ───
+
+  ALL are PLACEHOLDER — only show toasts:
+
+    Find          → Toast: "Triggered Command: Find"
+    Replace       → Toast: "Triggered Command: Replace"
+    Go To         → Toast: "Triggered Command: Go To"
+    Select All    → Toast: "Entire document content selected (N chars)"
+                     (does NOT actually select text)
+    Select Similar→ Toast: "Triggered Command: Select Similar"
+    Clear Select  → Toast: "Active text cursor selection cleared"
+
+  No actual find/replace/select logic is implemented.
+  These would need dialog popups for find/replace input,
+  and TextRange manipulation for Select All.
+
+
+================================================================================
+  15. AI COPILOT (Summarize, Improve, Grammar, Topics, Translate)
+================================================================================
+
+  File: DocEditorScreen.kt — executeRibbonAction() lines 1397-1437
+
+  ─── HOW IT WORKS ───
+
+  These are LOCAL, SIMULATED AI actions. They do NOT call any real AI API.
+  They directly manipulate draftContent using simple text rules.
+
+  ── ai_summarize ──
+
+    if document has >= 3 lines:
+      - Bullet 1: First line's first 60 chars
+      - Bullet 2: Middle line's first 60 chars
+      - Bullet 3: Last line's first 60 chars
+    else:
+      - Predefined summary bullets about JCdocs
+
+    Appends: "\n\n--- AI DOCUMENT SUMMARY ---\n[bullets]\n---------------------------\n"
+
+  ── ai_improve ──
+
+    Prepends: "⚡ PROFESSIONAL POLISH & ELEVATED TONE:\n"
+    + replaces "Welcome" with "We are pleased to introduce"
+    + replaces "Welcome to" with "We welcome you further into"
+
+    This REPLACES the entire document content (not append).
+
+  ── ai_grammar ──
+
+    Just trims whitespace from document:
+    val resolvedText = draftContent.trim()
+    onContentChange(resolvedText)
+
+  ── ai_topics ──
+
+    Appends 3 hardcoded research topics:
+      1. "Dynamic Kotlin-DSL compilers for local file operations."
+      2. "Real-time multi-threaded Room SQLite transaction pools."
+      3. "Responsive tablet-layout class dynamics."
+
+  ── translate_preview ──
+
+    Simulated English→Spanish:
+    - "Welcome" → "Bienvenido"
+    - "Project" → "Proyecto"
+    - "Document" → "Documento"
+    - "the" → "el"
+    - "and" → "y"
+
+    Appends original + translation to end of document.
+    This is a word-substitution demo, NOT real translation.
+
+
+================================================================================
+  16. DOCUMENT REVIEW: SPELL CHECK
+================================================================================
+
+  File: DocEditorScreen.kt — executeRibbonAction() lines 1345-1368
+
+  ─── HOW IT WORKS ───
+
+  A simple dictionary-based typo corrector:
+
+    val typosMap = mapOf(
+      "teh" to "the",
+      "recieve" to "receive",
+      "seperate" to "separate",
+      "dont" to "don't",
+      "accomodate" to "accommodate",
+      "Jcdocs" to "JCdocs"
+    )
+
+    Iterate map → replaceAll (case-insensitive) → count fixes
+
+    if fixedCount > 0:
+      onContentChange(fixed text)
+      Toast: "Autocorrect fixed N typos (e.g. teh -> the)"
+    else:
+      Toast: "Spell check completed: No typos detected!"
+
+  ─── LIMITATIONS ───
+
+    - Only 6 predefined typos
+    - No actual dictionary/lexicon
+    - No word-by-word spell checking
+    - Case-insensitive replaceAll can hit false positives
+    - No suggestion UI — autocorrects silently
+
+
+================================================================================
+  17. DOCUMENT REVIEW: READ ALOUD (TTS)
+================================================================================
+
+  File: DocEditorScreen.kt — executeRibbonAction() lines 1369-1384
+       and WorkspacePane lines 1992-1999
+
+  ─── HOW IT WORKS ───
+
+  Uses Android's built-in TextToSpeech API.
+
+  Initialization (DisposableEffect):
+    val localTts = android.speech.tts.TextToSpeech(context) { status -> }
+    tts = localTts
+    onDispose {
+        localTts.stop()
+        localTts.shutdown()
+    }
+
+  Toggle behavior:
+    if isSpeaking:
+        tts?.stop()
+        isSpeaking = false
+        Toast: "Read aloud voice speech stopped"
+    else:
+        val cleanText = draftContent.replace("[#*_|\\-<>]+".toRegex(), " ")
+        if cleanText.isNotBlank():
+            tts?.speak(cleanText, TextToSpeech.QUEUE_FLUSH, null, null)
+            isSpeaking = true
+            Toast: "Narrating document content aloud..."
+
+  ─── NOTES ───
+
+    - Cleans text by stripping markup characters with regex
+    - Uses QUEUE_FLUSH (stops any current speech, starts new)
+    - Does NOT set language/locale (defaults to device language)
+    - TextToSpeech engine must be installed on device
+    - isSpeaking state stored but not fully reactive
+
+
+================================================================================
+  18. LIVE DOCUMENT METRICS
+================================================================================
+
+  File: DocEditorScreen.kt — around lines 3219-3269
+
+  ─── HOW IT WORKS ───
+
+  Calculated in real-time from draftContent each recomposition:
+
+    val wordsCount = draftContent
+        .split("\\s+".toRegex())
+        .filter { it.isNotBlank() }
+        .size
+
+    val charsCount = draftContent.length
+
+    val paragraphsCount = draftContent
+        .split("\n+".toRegex())
+        .filter { it.isNotBlank() }
+        .size
+
+    val pagesCount = maxOf(1, wordsCount / 250 + 1)
+    val readingTime = maxOf(1, wordsCount / 180 + 1)
+
+  Display:
+    - Big numbers colored by doc type (Word=red, Sheet=green, Slide=orange)
+    - First row: Words, Chars, Paragraphs
+    - Divider
+    - Second row: Est. Pages, Read Time
+
+  ─── ACCURACY NOTES ───
+
+    - 250 words/page is a rough estimate (standard is ~250-300)
+    - 180 words/min is average reading speed
+    - Counts include markup characters (~~ ** <sub> etc.)
+    - Paragraph split uses single \n, not double \n\n
+
+
+================================================================================
+  19. THEME WHITE / IVORY / DARK
+================================================================================
+
+  File: DocEditorScreen.kt — executeRibbonAction() lines 1147-1157
+
+  ─── HOW IT WORKS ───
+
+  Changes the editorTheme state variable, which controls the paper
+  background color in WordDocumentEditor:
+
+    theme_white → onThemeChange("white")
+        → paper color = Color.White
+
+    theme_ivory → onThemeChange("ivory")
+        → paper color = Color(0xFFFFF8E7)  // warm cream
+
+    theme_dark → onThemeChange("dark")
+        → paper color = Color(0xFF1E1E1E)   // dark gray
+        → text color = Color.White
+
+  The theme state is passed as onEditorThemeChange to WordDocumentEditor.
+  This ONLY affects the simulated "paper" behind the BasicTextField,
+  not the system dark/light theme toggle.
+
+  Toast: "Paper theme changed to White/Ivory Note/OLED Dark"
+
+
+================================================================================
+  20. UNDO / REDO INTEGRATION
+================================================================================
+
+  File: DocEditorScreen.kt — WorkspacePane lines 1867-1951
+  File: DocUndoRedoManager.kt (82 lines)
+
+  ─── HOW IT WORKS ───
+
+  Every ribbon action that modifies content calls pushSnapshot() FIRST.
+
+  ── DocUndoRedoManager ──
+
+    Two stacks: undoStack and redoStack (mutableListOf)
+    Max undo history: 500 entries
+
+    DocEditorSnapshot captures 11 state fields:
+      title, draftContent, textFieldValue, spans (deep copy),
+      editorTheme, pageMargins, columnCount, textAlignment,
+      fontSize, isLandscape, pageNumberPosition, pageNumberFormat,
+      pageNumberStartAt
+
+    pushState():
+      - Clears redoStack (new action invalidates redo history)
+      - Deduplicates: skips if last state matches current (same content,
+        spans, margins, columns, alignment, fontSize, theme)
+      - Deep copies spans list via .map { it.copy() }
+      - Caps at 500 entries (removes oldest)
+
+    undo(currentState):
+      - Push current state to redoStack
+      - Pop from undoStack → restore all 11 fields
+
+    redo(currentState):
+      - Push current state to undoStack
+      - Pop from redoStack → restore all 11 fields
+
+    isRestoring flag: prevents pushState() during undo/redo restoration
+
+  ── WorkspaceMenuBar ──
+
+    Shows undo/redo buttons with enabled/disabled state via
+    undoRedoManager.canUndo() / canRedo()
+
+  ── Integration with Ribbon ──
+
+    Before executeRibbonAction is called:
+      pushSnapshot() captures current state
+      executeRibbonAction modifies content
+      undoRedoTrigger++ forces UI recompose of undo/redo buttons
+
+
+================================================================================
+  21. DocFormatSpan SYSTEM — DEEP DIVE
+================================================================================
+
+  File: DocEditorScreen.kt — DocFormatRepository object lines 82-186
+
+  ─── DATA STRUCTURE ───
+
+    data class DocFormatSpan(
+        var start: Int,
+        var end: Int,
+        val type: String,
+        val value: String = ""
+    )
+
+    Types: "bold", "italic", "underline", "strikethrough",
+           "subscript", "superscript", "color", "highlight"
+
+  ─── STORAGE ───
+
+    DocFormatRepository:
+      private val spans = mutableMapOf<
+          Int,                            // docId
+          SnapshotStateList<DocFormatSpan> // Compose-observable list
+      >()
+
+    getSpans(docId) → lazy init per docId
+
+  ─── KEY OPERATIONS ───
+
+    applySpan(docId, type, value, start, end):
+      1. If start >= end, return
+      2. Merge overlapping spans of same type+value
+         - Find all spans where span.end >= newStart && span.start <= newEnd
+         - Expand newStart/newEnd to cover all
+         - Remove old spans
+      3. Add single merged DocFormatSpan(newStart, newEnd, type, value)
+
+    removeSpanTypeRange(docId, type, start, end):
+      1. For each span of matching type:
+         - Fully inside → remove
+         - Covers selection → SPLIT into two (before/after)
+         - Overlaps start only → truncate end
+         - Overlaps end only → shift start
+
+    removeSpansRange(docId, start, end):
+      Same as removeSpanTypeRange but for ALL types
+      (used by clear_format)
+
+    shiftSpans(docId, changeStart, deleted, inserted):
+      Called when text is inserted/deleted to shift span indices
+      1. diff = inserted - deleted
+      2. For each span:
+         - If span.start >= changeStart + deleted → shift entire span
+         - If span inside deleted range → remove
+         - If span covers deleted range → extend end
+         - If span.end > changeStart → adjust end
+
+    hasSpan(docId, type, start, end):
+      Check if selection is fully covered by span of given type
+      Used for toggle behavior (Bold on → Bold off)
+
+
+================================================================================
+  22. EXPORT TO PDF
+================================================================================
+
+  File: DocEditorScreen.kt — ExportButton composable lines 1682-1762
+
+  ─── HOW IT WORKS ───
+
+  Uses Android's PdfDocument API + Storage Access Framework (SAF).
+
+  Flow:
+    User taps export icon → dropdown → "Export as PDF"
+       │
+       ▼
+    launch SAF CreateDocument("*/*")
+       │
+       ▼
+    User picks save location via system file picker
+       │
+       ▼
+    ContentResolver.openOutputStream(uri)
+       │
+       ▼
+    PdfDocument.startPage(PageInfo.Builder(width, height, 1))
+       │
+       ▼
+    Canvas.drawText(draftContent, 50f, 50f, paint)
+       │
+       ▼
+    PdfDocument.finishPage() → writeToStream → close
+       │
+       ▼
+    Toast: "Exported successfully"
+
+  Page dimensions by format:
+    A3     → 842 × 1191 pts
+    A4     → 595 × 842 pts (default)
+    A5     → 420 × 595 pts
+    Letter → 612 × 792 pts
+    Custom → width*72 × height*72 pts (inches → points)
+
+  ─── LIMITATIONS ───
+
+    - Draws raw text as a single canvas.drawText() call
+      (no line wrapping, no pagination, no formatting)
+    - No images, tables, or rich formatting in PDF
+    - Only supports .pdf extension (despite "*/*" MIME type)
+    - Text overflow is clipped (no multi-page support)
+
+
+================================================================================
+  END OF FEATURES EXPLAINED DOCUMENT
+================================================================================
