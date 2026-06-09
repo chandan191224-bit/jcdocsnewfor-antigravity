@@ -5337,9 +5337,12 @@ fun WordDocumentEditor(
                                                 pageTextFieldValue.selection.end == 0 &&
                                                 pageIndex > 0
                                             ) {
-                                                val newPages = pages.toMutableList()
-                                                val prevText = newPages[pageIndex - 1]
-                                                val currentText = newPages[pageIndex]
+                                                 val newPages = pages.toMutableList()
+                                                 val prevText = newPages[pageIndex - 1]
+                                                 val currentText = newPages[pageIndex]
+
+                                                 val separatorPos = pages.take(pageIndex).sumOf { it.length + 1 } - 1
+                                                 DocFormatRepository.shiftSpans(docId, separatorPos, 1, 0)
                                                 
                                                 targetFocusPage = pageIndex - 1
                                                 targetFocusOffset = prevText.length

@@ -54,3 +54,8 @@ Added font size and font family detection in `onTextFieldValueChange` callback (
 When content overflowed from one page to the next (page split), formatting spans were not adjusted for the new absolute positions. A span at positions 50-55 on page N would stay at 50-55 even after the content moved to page N+1 (where the same logical text is now at positions 100-105), causing formatting to disappear or apply to wrong text.
 
 **Fix**: Added `DocFormatRepository.moveSpanRange()` that moves a range of spans from one absolute position to another, handling straddling spans (splitting them across the boundary). Called from `LaunchedEffect(splitOffset)` after trimming leading whitespace from overflow content.
+
+### Follow-up — Backspace page merge span adjustment
+When pressing Backspace at position 0 of a non-first page to merge it with the previous page, the `\u000C` separator between the pages was deleted but spans were not adjusted, causing formatting to corrupt.
+
+**Fix**: Added `DocFormatRepository.shiftSpans(docId, separatorPos, 1, 0)` in the `onPreviewKeyEvent` backspace handler to shift all subsequent spans by -1 (the removed separator).

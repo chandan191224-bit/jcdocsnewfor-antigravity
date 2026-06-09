@@ -71,6 +71,7 @@ Added Color Picker dialog for font color/highlight, fixed icon highlighting not 
 6. **Ribbon title fix** — font group now displays "FONT" instead of "T FONT".
 7. **AI Copilot Suite & Document Review groups** — completely removed from Home ribbon.
 8. **Page split formatting fix** — added `DocFormatRepository.moveSpanRange()` to adjust span absolute positions when content overflows to the next page. Previously spans remained at their old absolute positions after a page split, causing formatting to disappear or corrupt. The fix also handles span straddling across the split boundary and trimmed whitespace in the overflow.
+9. **Backspace page merge span fix** — added `shiftSpans(docId, separatorPos, 1, 0)` in the `onPreviewKeyEvent` backspace handler to adjust spans when pages are merged via Backspace at position 0. The removed `\u000C` separator was not accounted for, causing subsequent spans to be off by 1.
 
 ### Files Modified
 - `app/src/main/java/com/example/ui/DocEditorScreen.kt`
