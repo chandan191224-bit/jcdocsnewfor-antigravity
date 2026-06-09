@@ -28,6 +28,9 @@ The entire font formatting group was broken due to two systemic issues:
 ## Files Changed
 - `app/src/main/java/com/example/ui/DocEditorScreen.kt` — all changes
 
+### Follow-up — Font size/family dropdown now reflects cursor position
+Added font size and font family detection in `onTextFieldValueChange` callback (`DocEditorScreen.kt:2112-2138`). When the cursor or selection moves to a position with a `fontSize` or `fontFamily` span, the dropdown updates to show that value. Falls back to `"16"` / `"Default"` for unstyled text. Detection only runs on selection-only changes (not while typing) to avoid resetting during text input.
+
 ## Verification
 - `gradlew :app:compileDebugKotlin` succeeds
 - `gradlew :app:assembleDebug` succeeds

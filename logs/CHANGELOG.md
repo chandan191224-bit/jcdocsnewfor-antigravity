@@ -50,6 +50,7 @@ Fixed Home ribbon font formatting — bold, italic, underline, strikethrough, su
 5. **Fixed font incr/decr** — selection-aware span application; cap at 200.
 6. **Fixed stub buttons** — strikethrough/subscript/superscript/color/highlight now call `onAction(...)`.
 7. **Added `isEditable` to `RibbonDropdown`** — supports editable `BasicTextField` with numeric keyboard.
+8. **Cursor-aware font size/family detection** — `onTextFieldValueChange` now detects font size/family spans at cursor position on selection-only changes and updates dropdown values accordingly. Falls back to `"16"` / `"Default"` for unstyled text.
 
 ### Files Modified
 - `app/src/main/java/com/example/ui/DocEditorScreen.kt`

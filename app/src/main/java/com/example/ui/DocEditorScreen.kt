@@ -2104,16 +2104,35 @@ fun WorkspacePane(
                                 modifier = Modifier.fillMaxSize(),
                                 textFieldValue = editorTextFieldValue,
                                 onTextFieldValueChange = { newVal ->
-                                    // if text or selection explicitly changes, push to undo/redo history before applying
-                                    if (editorTextFieldValue.text != newVal.text || editorTextFieldValue.selection != newVal.selection) {
+                                    val textChanged = newVal.text != editorTextFieldValue.text
+                                    val selectionChanged = newVal.selection != editorTextFieldValue.selection
+                                    if (textChanged || selectionChanged) {
                                         pushSnapshot()
                                     }
                                     editorTextFieldValue = newVal
                                     if (isEditorFocused) {
                                         lastSelection = newVal.selection
                                     }
-                                    if (newVal.text != draftContent) {
+                                    if (textChanged) {
                                         onContentChange(newVal.text)
+                                    }
+                                    if (isEditorFocused && !textChanged && selectionChanged && newVal.selection.start >= 0) {
+                                        val pos = newVal.selection.start
+                                        val spans = DocFormatRepository.getSpans(selectedDoc.id)
+                                        val sizeSpan = spans.find { it.type == "fontSize" && it.start <= pos && it.end > pos }
+                                        val detectedSize = sizeSpan?.value
+                                        if (detectedSize != null && detectedSize != activeFontSize) {
+                                            activeFontSize = detectedSize
+                                        } else if (detectedSize == null && activeFontSize != "16") {
+                                            activeFontSize = "16"
+                                        }
+                                        val familySpan = spans.find { it.type == "fontFamily" && it.start <= pos && it.end > pos }
+                                        val detectedFamily = familySpan?.value
+                                        if (detectedFamily != null && detectedFamily != activeFontFamily) {
+                                            activeFontFamily = detectedFamily
+                                        } else if (detectedFamily == null && activeFontFamily != "Default") {
+                                            activeFontFamily = "Default"
+                                        }
                                     }
                                 },
                                 onFocusChanged = { isEditorFocused = it }
