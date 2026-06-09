@@ -22,4 +22,4 @@ Initial setup and push of all source files to remote GitHub repository.
 - `logs/SESSION_LOG_2026-06-09.md`
 
 ### Files Modified
-- `.gitignore` — updated to exclude `logs/` or include as appropriate
+- `.env.example` — replaced OpenRouter API key with placeholder `YOUR_OPENROUTER_API_KEY` to avoid secret exposure
