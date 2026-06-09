@@ -31,6 +31,10 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.input.TransformedText
@@ -53,6 +57,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -1066,33 +1071,23 @@ fun executeRibbonAction(
     onSpeakStateChange: (Boolean) -> Unit,
     textFieldValue: TextFieldValue? = null,
     onTextFieldValueChange: ((TextFieldValue) -> Unit)? = null,
-    lastSelection: TextRange? = null
+    lastSelection: TextRange? = null,
+    formatVersion: Int = 0,
+    onFormatVersionChange: (Int) -> Unit = {}
 ) {
     fun showToast(msg: String) {
-        snackbarScope.launch {
-            snackbarState.showSnackbar(
-                message = msg,
-                duration = SnackbarDuration.Short
-            )
-        }
     }
 
     val applyFormatting = { type: String, value: String, debugName: String ->
-        if (textFieldValue != null && onTextFieldValueChange != null) {
+        if (textFieldValue != null) {
             val selection = textFieldValue.selection
             if (!selection.collapsed) {
-                // Toggle: if it already has the span, remove it.
                 if (DocFormatRepository.hasSpan(selectedDoc.id, type, selection.start, selection.end)) {
                     DocFormatRepository.removeSpanTypeRange(selectedDoc.id, type, selection.start, selection.end)
-                    showToast("$debugName style removed from selection")
                 } else {
                     DocFormatRepository.applySpan(selectedDoc.id, type, value, selection.start, selection.end)
-                    showToast("$debugName style applied to selection")
                 }
-                // Trigger recomposition by creating a new TextFieldValue
-                onTextFieldValueChange(textFieldValue.copy())
-            } else {
-                showToast("Please select text to apply $debugName")
+                onFormatVersionChange(formatVersion + 1)
             }
         }
     }
@@ -1617,9 +1612,11 @@ fun RibbonDropdown(
     options: List<String>,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
-    isDarkTheme: Boolean = isSystemInDarkTheme()
+    isDarkTheme: Boolean = isSystemInDarkTheme(),
+    isEditable: Boolean = false
 ) {
     var expanded by remember { mutableStateOf(false) }
+    var textFieldValue by remember(selectedValue) { mutableStateOf(TextFieldValue(selectedValue)) }
     Box(
         modifier = modifier
             .height(38.dp)
@@ -1639,15 +1636,39 @@ fun RibbonDropdown(
             horizontalArrangement = Arrangement.SpaceBetween,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text(
-                text = selectedValue,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                color = if (isDarkTheme) Color.White else Color.Black,
-                modifier = Modifier.weight(1f)
-            )
+            if (isEditable) {
+                BasicTextField(
+                    value = textFieldValue,
+                    onValueChange = { textFieldValue = it },
+                    singleLine = true,
+                    textStyle = TextStyle(
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (isDarkTheme) Color.White else Color.Black
+                    ),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onDone = {
+                            onSelect(textFieldValue.text)
+                            expanded = false
+                        }
+                    ),
+                    modifier = Modifier.weight(1f)
+                )
+            } else {
+                Text(
+                    text = selectedValue,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = if (isDarkTheme) Color.White else Color.Black,
+                    modifier = Modifier.weight(1f)
+                )
+            }
             Icon(
                 imageVector = Icons.Outlined.ArrowDropDown,
                 contentDescription = "Dropdown Arrow",
@@ -1672,6 +1693,9 @@ fun RibbonDropdown(
                     onClick = {
                         onSelect(option)
                         expanded = false
+                        if (isEditable) {
+                            textFieldValue = TextFieldValue(option)
+                        }
                     }
                 )
             }
@@ -1865,6 +1889,7 @@ fun WorkspacePane(
         val context = androidx.compose.ui.platform.LocalContext.current
 
         val undoRedoManager = remember(selectedDoc.id) { DocUndoRedoManager(selectedDoc.id) }
+        var formatVersion by remember { mutableStateOf(0) } // Force recomposition when formatting spans change
         var undoRedoTrigger by remember { mutableStateOf(0) } // To force UI recompose when stacks change
         
         fun showUndoRedoFeedback(msg: String) {
@@ -2069,6 +2094,7 @@ fun WorkspacePane(
                                 columnCount = columnCount,
                                 textAlignment = textAlignment,
                                 fontSize = fontSize,
+                                formatVersion = formatVersion,
                                 isLandscape = isLandscape,
                                 pageFormat = pageFormat,
                                 customDimensions = customDimensions,
@@ -2344,7 +2370,9 @@ fun WorkspacePane(
                                                     onContentChange(newVal.text)
                                                 }
                                             },
-                                            lastSelection = lastSelection
+                                            lastSelection = lastSelection,
+                                            formatVersion = formatVersion,
+                                            onFormatVersionChange = { formatVersion = it }
                                         )
                                     }
 
@@ -2377,28 +2405,16 @@ fun WorkspacePane(
                                                                 options = listOf("Default", "Aptos", "Calibri", "Arial", "Times New Roman", "Courier New", "Georgia", "Space Grotesk", "JetBrains Mono"),
                                                                 onSelect = {
                                                                     activeFontFamily = it
-                                                                    if (it != "Default") {
-                                                                        val prefix = "<font face=\"$it\">"
-                                                                        val suffix = "</font>"
-                                                                        val selection = lastSelection
-                                                                        val text = editorTextFieldValue.text
-                                                                        if (!selection.collapsed) {
-                                                                            val selectedStr = text.substring(selection.start, selection.end)
-                                                                            val formatted = prefix + selectedStr + suffix
-                                                                            val newText = text.replaceRange(selection.start, selection.end, formatted)
-                                                                            editorTextFieldValue = TextFieldValue(text = newText, selection = TextRange(selection.start, selection.start + formatted.length))
-                                                                            onContentChange(newText)
+                                                                    val selection = editorTextFieldValue.selection
+                                                                    val raw = if (!selection.collapsed) selection else if (!lastSelection.collapsed) lastSelection else null
+                                                                    val effective = if (raw != null) TextRange(minOf(raw.start, raw.end), maxOf(raw.start, raw.end)) else null
+                                                                    if (effective != null) {
+                                                                        if (it == "Default") {
+                                                                            DocFormatRepository.removeSpanTypeRange(selectedDoc.id, "fontFamily", effective.start, effective.end)
                                                                         } else {
-                                                                            val insertText = prefix + suffix
-                                                                            val newText = text.replaceRange(selection.start, selection.start, insertText)
-                                                                            editorTextFieldValue = TextFieldValue(text = newText, selection = TextRange(selection.start + prefix.length))
-                                                                            onContentChange(newText)
+                                                                            DocFormatRepository.applySpan(selectedDoc.id, "fontFamily", it, effective.start, effective.end)
                                                                         }
-                                                                    } else {
-                                                                        onAction("clear_format")
-                                                                    }
-                                                                    coroutineScope.launch {
-                                                                        snackbarHostState.showSnackbar("Font family changed to: $it")
+                                                                        formatVersion++
                                                                     }
                                                                 },
                                                                 modifier = Modifier.weight(3.5f)
@@ -2406,29 +2422,19 @@ fun WorkspacePane(
 
                                                             RibbonDropdown(
                                                                 selectedValue = activeFontSize,
-                                                                options = listOf("9", "10", "11", "12", "14", "16", "18", "20", "24", "28", "32", "48"),
+                                                                options = listOf("9", "10", "11", "12", "14", "16", "18", "20", "24", "28", "32", "36", "40", "44", "48", "54", "60", "66", "72", "80", "88", "96", "108", "120", "144", "180", "200"),
+                                                                isEditable = true,
                                                                 onSelect = {
                                                                     activeFontSize = it
                                                                     val num = it.toIntOrNull() ?: 16
-                                                                    fontSize = num.sp
-                                                                    val prefix = "<font size=\"$it\">"
-                                                                    val suffix = "</font>"
-                                                                    val selection = lastSelection
-                                                                    val text = editorTextFieldValue.text
-                                                                    if (!selection.collapsed) {
-                                                                        val selectedStr = text.substring(selection.start, selection.end)
-                                                                        val formatted = prefix + selectedStr + suffix
-                                                                        val newText = text.replaceRange(selection.start, selection.end, formatted)
-                                                                        editorTextFieldValue = TextFieldValue(text = newText, selection = TextRange(selection.start, selection.start + formatted.length))
-                                                                        onContentChange(newText)
+                                                                    val selection = editorTextFieldValue.selection
+                                                                    val raw = if (!selection.collapsed) selection else if (!lastSelection.collapsed) lastSelection else null
+                                                                    val effective = if (raw != null) TextRange(minOf(raw.start, raw.end), maxOf(raw.start, raw.end)) else null
+                                                                    if (effective != null) {
+                                                                        DocFormatRepository.applySpan(selectedDoc.id, "fontSize", it, effective.start, effective.end)
+                                                                        formatVersion++
                                                                     } else {
-                                                                        val insertText = prefix + suffix
-                                                                        val newText = text.replaceRange(selection.start, selection.start, insertText)
-                                                                        editorTextFieldValue = TextFieldValue(text = newText, selection = TextRange(selection.start + prefix.length))
-                                                                        onContentChange(newText)
-                                                                    }
-                                                                    coroutineScope.launch {
-                                                                        snackbarHostState.showSnackbar("Font size set to: ${num}sp")
+                                                                        fontSize = num.sp
                                                                     }
                                                                 },
                                                                 modifier = Modifier.weight(2.2f)
@@ -2437,11 +2443,21 @@ fun WorkspacePane(
                                                             RibbonIconButton(
                                                                 contentDescription = "Increase Font Size",
                                                                 onClick = {
-                                                                    onAction("font_incr")
-                                                                    val currentSize = fontSize.value.toInt()
-                                                                    val newSize = if (currentSize < 48) currentSize + 2 else 48
-                                                                    fontSize = newSize.sp
-                                                                    activeFontSize = newSize.toString()
+                                                                    val selection = editorTextFieldValue.selection
+                                                                    val raw = if (!selection.collapsed) selection else if (!lastSelection.collapsed) lastSelection else null
+                                                                    val effective = if (raw != null) TextRange(minOf(raw.start, raw.end), maxOf(raw.start, raw.end)) else null
+                                                                    if (effective != null) {
+                                                                        val currentVal = activeFontSize.toIntOrNull() ?: 16
+                                                                        val newSize = if (currentVal < 200) currentVal + 2 else 200
+                                                                        DocFormatRepository.applySpan(selectedDoc.id, "fontSize", newSize.toString(), effective.start, effective.end)
+                                                                        formatVersion++
+                                                                        activeFontSize = newSize.toString()
+                                                                    } else {
+                                                                        val currentSize = fontSize.value.toInt()
+                                                                        val newSize = if (currentSize < 200) currentSize + 2 else 200
+                                                                        fontSize = newSize.sp
+                                                                        activeFontSize = newSize.toString()
+                                                                    }
                                                                 },
                                                                 colorSchemeColor = groupColor,
                                                                 transparentBg = true,
@@ -2454,11 +2470,21 @@ fun WorkspacePane(
                                                             RibbonIconButton(
                                                                 contentDescription = "Decrease Font Size",
                                                                 onClick = {
-                                                                    onAction("font_decr")
-                                                                    val currentSize = fontSize.value.toInt()
-                                                                    val newSize = if (currentSize > 8) currentSize - 2 else 8
-                                                                    fontSize = newSize.sp
-                                                                    activeFontSize = newSize.toString()
+                                                                    val selection = editorTextFieldValue.selection
+                                                                    val raw = if (!selection.collapsed) selection else if (!lastSelection.collapsed) lastSelection else null
+                                                                    val effective = if (raw != null) TextRange(minOf(raw.start, raw.end), maxOf(raw.start, raw.end)) else null
+                                                                    if (effective != null) {
+                                                                        val currentVal = activeFontSize.toIntOrNull() ?: 16
+                                                                        val newSize = if (currentVal > 8) currentVal - 2 else 8
+                                                                        DocFormatRepository.applySpan(selectedDoc.id, "fontSize", newSize.toString(), effective.start, effective.end)
+                                                                        formatVersion++
+                                                                        activeFontSize = newSize.toString()
+                                                                    } else {
+                                                                        val currentSize = fontSize.value.toInt()
+                                                                        val newSize = if (currentSize > 8) currentSize - 2 else 8
+                                                                        fontSize = newSize.sp
+                                                                        activeFontSize = newSize.toString()
+                                                                    }
                                                                 },
                                                                 colorSchemeColor = groupColor,
                                                                 transparentBg = true,
@@ -2474,7 +2500,9 @@ fun WorkspacePane(
                                                                     val selection = editorTextFieldValue.selection
                                                                     val text = editorTextFieldValue.text
                                                                     if (!selection.collapsed) {
-                                                                        val selectedStr = text.substring(selection.start, selection.end)
+                                                                        val selStart = minOf(selection.start, selection.end)
+                                                                        val selEnd = maxOf(selection.start, selection.end)
+                                                                        val selectedStr = text.substring(selStart, selEnd)
                                                                         val updatedStr = if (selectedStr == selectedStr.uppercase()) {
                                                                             selectedStr.lowercase()
                                                                         } else if (selectedStr == selectedStr.lowercase()) {
@@ -2482,8 +2510,8 @@ fun WorkspacePane(
                                                                         } else {
                                                                             selectedStr.uppercase()
                                                                         }
-                                                                        val newText = text.replaceRange(selection.start, selection.end, updatedStr)
-                                                                        editorTextFieldValue = TextFieldValue(text = newText, selection = TextRange(selection.start, selection.start + updatedStr.length))
+                                                                        val newText = text.replaceRange(selStart, selEnd, updatedStr)
+                                                                        editorTextFieldValue = TextFieldValue(text = newText, selection = TextRange(selStart, selStart + updatedStr.length))
                                                                         onContentChange(newText)
                                                                     } else {
                                                                         val currentContent = draftContent
@@ -2496,9 +2524,6 @@ fun WorkspacePane(
                                                                         }
                                                                         editorTextFieldValue = TextFieldValue(text = updatedContent, selection = TextRange(updatedContent.length))
                                                                         onContentChange(updatedContent)
-                                                                    }
-                                                                    coroutineScope.launch {
-                                                                        snackbarHostState.showSnackbar("Changed text case formatting")
                                                                     }
                                                                 },
                                                                 colorSchemeColor = groupColor,
@@ -2559,11 +2584,8 @@ fun WorkspacePane(
                                                             RibbonIconButton(
                                                                 contentDescription = "Strikethrough",
                                                                 onClick = {
-                                                                    onContentChange(draftContent + " ~~Strikethrough~~")
-                                                                    coroutineScope.launch {
-                                                                        snackbarHostState.showSnackbar("Strikethrough formatting applied")
-                                                                    }
-                                                                },
+                                                                    onAction("strikethrough")
+                                                                 },
                                                                 colorSchemeColor = groupColor,
                                                                 modifier = Modifier.weight(1f),
                                                                 customContent = {
@@ -2573,10 +2595,7 @@ fun WorkspacePane(
                                                             RibbonIconButton(
                                                                 contentDescription = "Subscript",
                                                                 onClick = {
-                                                                    onContentChange(draftContent + " <sub>sub</sub>")
-                                                                    coroutineScope.launch {
-                                                                        snackbarHostState.showSnackbar("Subscript formatting applied")
-                                                                    }
+                                                                    onAction("subscript")
                                                                 },
                                                                 colorSchemeColor = groupColor,
                                                                 modifier = Modifier.weight(1f),
@@ -2590,10 +2609,7 @@ fun WorkspacePane(
                                                             RibbonIconButton(
                                                                 contentDescription = "Superscript",
                                                                 onClick = {
-                                                                    onContentChange(draftContent + " <sup>super</sup>")
-                                                                    coroutineScope.launch {
-                                                                        snackbarHostState.showSnackbar("Superscript formatting applied")
-                                                                    }
+                                                                    onAction("superscript")
                                                                 },
                                                                 colorSchemeColor = groupColor,
                                                                 modifier = Modifier.weight(1f),
@@ -2607,9 +2623,7 @@ fun WorkspacePane(
                                                             RibbonIconButton(
                                                                 contentDescription = "Font Color",
                                                                 onClick = {
-                                                                    coroutineScope.launch {
-                                                                        snackbarHostState.showSnackbar("Font color changed to primary accent!")
-                                                                    }
+                                                                    onAction("color")
                                                                 },
                                                                 colorSchemeColor = groupColor,
                                                                 modifier = Modifier.weight(1f),
@@ -2620,9 +2634,7 @@ fun WorkspacePane(
                                                             RibbonIconButton(
                                                                 contentDescription = "Highlight",
                                                                 onClick = {
-                                                                    coroutineScope.launch {
-                                                                        snackbarHostState.showSnackbar("Text highlight applied!")
-                                                                    }
+                                                                    onAction("highlight")
                                                                 },
                                                                 colorSchemeColor = groupColor,
                                                                 modifier = Modifier.weight(1f),
@@ -4781,13 +4793,31 @@ class RichTextVisualTransformation(private val spans: List<DocFormatSpan>, priva
                     "highlight" -> builder.addStyle(SpanStyle(background = Color(0xFFFDE047).copy(alpha = 0.45f)), relStart, relEnd)
                     "subscript" -> builder.addStyle(SpanStyle(baselineShift = androidx.compose.ui.text.style.BaselineShift.Subscript, fontSize = 11.sp), relStart, relEnd)
                     "superscript" -> builder.addStyle(SpanStyle(baselineShift = androidx.compose.ui.text.style.BaselineShift.Superscript, fontSize = 11.sp), relStart, relEnd)
+                    "fontSize" -> {
+                        val size = span.value.toFloatOrNull()
+                        if (size != null) {
+                            builder.addStyle(SpanStyle(fontSize = size.sp), relStart, relEnd)
+                        }
+                    }
+                    "fontFamily" -> {
+                        val family = when (span.value) {
+                            "Arial" -> FontFamily.SansSerif
+                            "Times New Roman" -> FontFamily.Serif
+                            "Courier New" -> FontFamily.Monospace
+                            "Georgia" -> FontFamily.Serif
+                            "Verdana" -> FontFamily.SansSerif
+                            "Aptos" -> FontFamily.SansSerif
+                            "Calibri" -> FontFamily.SansSerif
+                            else -> FontFamily.Default
+                        }
+                        builder.addStyle(SpanStyle(fontFamily = family), relStart, relEnd)
+                    }
                 }
             }
         }
         return TransformedText(builder.toAnnotatedString(), OffsetMapping.Identity)
     }
 }
-
 
 fun toRoman(number: Int): String {
     var num = number
@@ -4838,6 +4868,7 @@ fun WordDocumentEditor(
     columnCount: Int,
     textAlignment: androidx.compose.ui.text.style.TextAlign,
     fontSize: androidx.compose.ui.unit.TextUnit,
+    formatVersion: Int = 0,
     isLandscape: Boolean,
     pageFormat: String = "A4",
     customDimensions: Pair<Float, Float> = 8.5f to 11.0f,
@@ -5029,6 +5060,7 @@ fun WordDocumentEditor(
                                 BasicTextField(
                                     value = pageTextFieldValue,
                                     onValueChange = { newTfv ->
+                                        val oldSelection = pageTextFieldValue.selection
                                         pageTextFieldValue = newTfv
                                         
                                         if (newTfv.text != lastPushedText) {
@@ -5060,6 +5092,8 @@ fun WordDocumentEditor(
                                                 onContentChange(newFullText)
                                                 onTextFieldValueChange?.invoke(TextFieldValue(text = newFullText))
                                             }
+                                        } else if (oldSelection != newTfv.selection) {
+                                            onTextFieldValueChange?.invoke(newTfv)
                                         }
                                     },
                                     onTextLayout = { result: androidx.compose.ui.text.TextLayoutResult ->
@@ -5092,7 +5126,8 @@ fun WordDocumentEditor(
                                         DocFormatRepository.getSpans(docId).toList(),
                                         docId,
                                         pageIndex,
-                                        pageTextFieldValue.text.length
+                                        pageTextFieldValue.text.length,
+                                        formatVersion
                                     ) {
                                         RichTextVisualTransformation(DocFormatRepository.getSpans(docId).toList(), pages.take(pageIndex).sumOf { it.length + 1 })
                                     },

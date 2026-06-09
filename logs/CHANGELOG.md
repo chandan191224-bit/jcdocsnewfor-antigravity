@@ -32,3 +32,24 @@ Initial setup, push to remote, build & install on device, and comprehensive arch
 
 ### Files Modified
 - `.env.example` — replaced OpenRouter API key with placeholder
+
+## Session 2 — 2026-06-10
+
+### Summary
+Fixed Home ribbon font formatting — bold, italic, underline, strikethrough, subscript, superscript, font color, highlight, font size/family dropdowns, font incr/decr, and Change Case. All formatting now uses `DocFormatRepository.applySpan` + `formatVersion` recomposition trigger.
+
+### Root Causes
+1. **Selection not propagated** — `WordDocumentEditor`'s `onValueChange` only propagated text changes to parent; selection-only changes were dropped, so `editorTextFieldValue.selection` was always collapsed.
+2. **No recomposition trigger** — `formatVersion` was missing; original `onTextFieldValueChange(textFieldValue.copy())` was a no-op since `.copy()` produces an equal-valued `TextFieldValue`.
+
+### Changes Made
+1. **Propagated selection** — added `else if (oldSelection != newTfv.selection)` branch in `WordDocumentEditor`'s `onValueChange` to forward selection-only changes to parent.
+2. **Wired `formatVersion`** — added to `executeRibbonAction` params; `applyFormatting` calls `onFormatVersionChange(formatVersion + 1)`; `WordDocumentEditor` uses it as `remember` key for `visualTransformation`.
+3. **Added `fontSize`/`fontFamily` rendering** — new cases in `RichTextVisualTransformation`; font names map to `FontFamily` enums.
+4. **Fixed dropdowns** — font family/size dropdowns replaced HTML injection with `DocFormatRepository.applySpan`.
+5. **Fixed font incr/decr** — selection-aware span application; cap at 200.
+6. **Fixed stub buttons** — strikethrough/subscript/superscript/color/highlight now call `onAction(...)`.
+7. **Added `isEditable` to `RibbonDropdown`** — supports editable `BasicTextField` with numeric keyboard.
+
+### Files Modified
+- `app/src/main/java/com/example/ui/DocEditorScreen.kt`
