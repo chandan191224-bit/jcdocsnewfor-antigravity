@@ -59,3 +59,10 @@ When content overflowed from one page to the next (page split), formatting spans
 When pressing Backspace at position 0 of a non-first page to merge it with the previous page, the `\u000C` separator between the pages was deleted but spans were not adjusted, causing formatting to corrupt.
 
 **Fix**: Added `DocFormatRepository.shiftSpans(docId, separatorPos, 1, 0)` in the `onPreviewKeyEvent` backspace handler to shift all subsequent spans by -1 (the removed separator).
+
+### Follow-up — Reverse page merge (content flows back from next page)
+When content overflowed to the next page and the user then shortened text on the current page (deletion), the overflow content never flowed back. Pages only split forward, never merged backward.
+
+**Fix**: Added `mergeBackOffset` state + `LaunchedEffect(mergeBackOffset)` in `WordDocumentEditor`. In `onTextLayout`, when the current page has >40px of unused space AND the next page has content, `mergeBackOffset` is set, triggering a merge of all content from page N+1 back into page N. Spans are adjusted via `DocFormatRepository.moveSpanRange()`. If the merged content is too long, the standard split mechanism re-splits it.
+
+**Oscillation guard**: Added `mergeBackLocked` flag set after each merge-back and cleared on user text edit, preventing infinite merge↔split cycles when content is right at the page boundary.

@@ -5163,6 +5163,8 @@ fun WordDocumentEditor(
                                 
                                 var textFieldHeightPx by remember { mutableIntStateOf(0) }
                                 var splitOffset by remember { mutableIntStateOf(-1) }
+                                var mergeBackOffset by remember { mutableIntStateOf(-1) }
+                                var mergeBackLocked by remember { mutableStateOf(false) }
                                 
                                 var pageTextFieldValue by remember { mutableStateOf(TextFieldValue(pageContent)) }
                                 var lastPushedText by remember { mutableStateOf(pageContent) }
@@ -5230,7 +5232,38 @@ fun WordDocumentEditor(
                                         splitOffset = -1
                                     }
                                 }
-                                
+
+                                LaunchedEffect(mergeBackOffset) {
+                                    if (mergeBackOffset != -1 && pageIndex + 1 < pages.size) {
+                                        val nextContent = pages[pageIndex + 1]
+                                        val currentText = pageTextFieldValue.text
+                                        val merged = currentText + nextContent
+
+                                        val absoluteOffsetNext = pages.take(pageIndex + 1).sumOf { it.length + 1 }
+                                        DocFormatRepository.moveSpanRange(
+                                            docId,
+                                            absoluteOffsetNext,
+                                            absoluteOffsetNext + nextContent.length,
+                                            pages.take(pageIndex).sumOf { it.length + 1 } + currentText.length
+                                        )
+
+                                        val newPages = pages.toMutableList()
+                                        newPages[pageIndex] = merged
+                                        newPages.removeAt(pageIndex + 1)
+
+                                        val newFullText = newPages.joinToString("\u000C")
+                                        onContentChange(newFullText)
+                                        pageTextFieldValue = pageTextFieldValue.copy(
+                                            text = merged,
+                                            selection = TextRange(pageTextFieldValue.selection.start)
+                                        )
+                                        lastPushedText = merged
+                                        onTextFieldValueChange?.invoke(TextFieldValue(text = newFullText))
+                                        mergeBackOffset = -1
+                                        mergeBackLocked = true
+                                    }
+                                }
+
                                 LaunchedEffect(pageContent, targetFocusPage) {
                                     if (targetFocusPage == pageIndex && targetFocusOffset != null) {
                                         pageTextFieldValue = pageTextFieldValue.copy(
@@ -5257,6 +5290,7 @@ fun WordDocumentEditor(
                                         pageTextFieldValue = newTfv
                                         
                                         if (newTfv.text != lastPushedText) {
+                                            mergeBackLocked = false
                                             val oldText = lastPushedText
                                             val newText = newTfv.text
                                             lastPushedText = newText
@@ -5305,6 +5339,12 @@ fun WordDocumentEditor(
                                                 if (tentativeSplit < pageTextFieldValue.text.length) {
                                                     splitOffset = tentativeSplit
                                                 }
+                                            }
+                                        } else if (textFieldHeightPx > 0 && splitOffset == -1 && mergeBackOffset == -1 && !mergeBackLocked && pageIndex + 1 < pages.size && pages[pageIndex + 1].isNotEmpty() && result.lineCount > 0) {
+                                            val usedHeight = result.getLineBottom(result.lineCount - 1)
+                                            val availableHeight = (textFieldHeightPx - 50).toFloat()
+                                            if (usedHeight < availableHeight - 40) {
+                                                mergeBackOffset = 1
                                             }
                                         }
                                     },
