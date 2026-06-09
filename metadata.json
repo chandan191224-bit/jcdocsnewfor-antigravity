@@ -1,0 +1,6 @@
+{
+  "name": "JCdocs",
+  "description": "Premium real-time reactive offline office suite supporting documents, spreadsheets, interactive slideshows, and a human-like AI conversational assistant.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
