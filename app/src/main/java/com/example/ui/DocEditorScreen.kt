@@ -1080,12 +1080,14 @@ fun executeRibbonAction(
 
     val applyFormatting = { type: String, value: String, debugName: String ->
         if (textFieldValue != null) {
-            val selection = textFieldValue.selection
-            if (!selection.collapsed) {
-                if (DocFormatRepository.hasSpan(selectedDoc.id, type, selection.start, selection.end)) {
-                    DocFormatRepository.removeSpanTypeRange(selectedDoc.id, type, selection.start, selection.end)
+            val sel = textFieldValue.selection
+            if (!sel.collapsed) {
+                val start = minOf(sel.start, sel.end)
+                val end = maxOf(sel.start, sel.end)
+                if (DocFormatRepository.hasSpan(selectedDoc.id, type, start, end)) {
+                    DocFormatRepository.removeSpanTypeRange(selectedDoc.id, type, start, end)
                 } else {
-                    DocFormatRepository.applySpan(selectedDoc.id, type, value, selection.start, selection.end)
+                    DocFormatRepository.applySpan(selectedDoc.id, type, value, start, end)
                 }
                 onFormatVersionChange(formatVersion + 1)
             }
@@ -1163,7 +1165,9 @@ fun executeRibbonAction(
                 val selection = lastSelection ?: textFieldValue.selection   
                 val text = textFieldValue.text
                 if (!selection.collapsed) {
-                    val selectedStr = text.substring(selection.start, selection.end)
+                    val selStart = minOf(selection.start, selection.end)
+                    val selEnd = maxOf(selection.start, selection.end)
+                    val selectedStr = text.substring(selStart, selEnd)
                     val cleaned = selectedStr
                         .replace("**", "")
                         .replace("*", "")
@@ -1180,10 +1184,10 @@ fun executeRibbonAction(
                         .replace("</span>", "")
                         .replace("<mark>", "")
                         .replace("</mark>", "")
-                    val newText = text.replaceRange(selection.start, selection.end, cleaned)
-                    onTextFieldValueChange(TextFieldValue(text = newText, selection = TextRange(selection.start, selection.start + cleaned.length)))
+                    val newText = text.replaceRange(selStart, selEnd, cleaned)
+                    onTextFieldValueChange(TextFieldValue(text = newText, selection = TextRange(selStart, selStart + cleaned.length)))
                     // Clear spans as well
-                    DocFormatRepository.removeSpansRange(selectedDoc.id, selection.start, selection.end)
+                    DocFormatRepository.removeSpansRange(selectedDoc.id, selStart, selEnd)
                 } else {
                     val cleaned = text
                         .replace("**", "")
@@ -1892,6 +1896,29 @@ fun WorkspacePane(
         var formatVersion by remember { mutableStateOf(0) } // Force recomposition when formatting spans change
         var undoRedoTrigger by remember { mutableStateOf(0) } // To force UI recompose when stacks change
         
+        val activeFormatting by remember {
+            derivedStateOf {
+                val spans = DocFormatRepository.getSpans(selectedDoc.id)
+                val pos = editorTextFieldValue.selection.start
+                if (pos < 0) emptySet()
+                else spans.filter { it.start <= pos && it.end > pos }.map { it.type }.toSet()
+            }
+        }
+        val cursorFontColorVal by remember {
+            derivedStateOf {
+                val spans = DocFormatRepository.getSpans(selectedDoc.id)
+                val pos = editorTextFieldValue.selection.start
+                if (pos < 0) null else spans.find { it.type == "color" && it.start <= pos && it.end > pos }?.value
+            }
+        }
+        val cursorHighlightColorVal by remember {
+            derivedStateOf {
+                val spans = DocFormatRepository.getSpans(selectedDoc.id)
+                val pos = editorTextFieldValue.selection.start
+                if (pos < 0) null else spans.find { it.type == "highlight" && it.start <= pos && it.end > pos }?.value
+            }
+        }
+        
         fun showUndoRedoFeedback(msg: String) {
             android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
         }
@@ -2576,6 +2603,7 @@ fun WorkspacePane(
                                                             RibbonIconButton(
                                                                 contentDescription = "Bold",
                                                                 onClick = { onAction("bold") },
+                                                                isSelected = "bold" in activeFormatting,
                                                                 colorSchemeColor = groupColor,
                                                                 modifier = Modifier.weight(1f),
                                                                 customContent = {
@@ -2585,6 +2613,7 @@ fun WorkspacePane(
                                                             RibbonIconButton(
                                                                 contentDescription = "Italic",
                                                                 onClick = { onAction("italic") },
+                                                                isSelected = "italic" in activeFormatting,
                                                                 colorSchemeColor = groupColor,
                                                                 modifier = Modifier.weight(1f),
                                                                 customContent = {
@@ -2594,6 +2623,7 @@ fun WorkspacePane(
                                                             RibbonIconButton(
                                                                 contentDescription = "Underline",
                                                                 onClick = { onAction("underline") },
+                                                                isSelected = "underline" in activeFormatting,
                                                                 colorSchemeColor = groupColor,
                                                                 modifier = Modifier.weight(1f),
                                                                 customContent = {
@@ -2605,6 +2635,7 @@ fun WorkspacePane(
                                                                 onClick = {
                                                                     onAction("strikethrough")
                                                                  },
+                                                                isSelected = "strikethrough" in activeFormatting,
                                                                 colorSchemeColor = groupColor,
                                                                 modifier = Modifier.weight(1f),
                                                                 customContent = {
@@ -2616,6 +2647,7 @@ fun WorkspacePane(
                                                                 onClick = {
                                                                     onAction("subscript")
                                                                 },
+                                                                isSelected = "subscript" in activeFormatting,
                                                                 colorSchemeColor = groupColor,
                                                                 modifier = Modifier.weight(1f),
                                                                 customContent = {
@@ -2630,6 +2662,7 @@ fun WorkspacePane(
                                                                 onClick = {
                                                                     onAction("superscript")
                                                                 },
+                                                                isSelected = "superscript" in activeFormatting,
                                                                 colorSchemeColor = groupColor,
                                                                 modifier = Modifier.weight(1f),
                                                                 customContent = {
@@ -2644,10 +2677,17 @@ fun WorkspacePane(
                                                                 onClick = {
                                                                     onAction("color")
                                                                 },
+                                                                isSelected = "color" in activeFormatting,
                                                                 colorSchemeColor = groupColor,
                                                                 modifier = Modifier.weight(1f),
                                                                 customContent = {
-                                                                    Text("A", fontSize = 18.sp, fontWeight = FontWeight.Black, color = Color(0xFF3B82F6))
+                                                                    val colorVal = cursorFontColorVal
+                                                                    val displayColor = if (colorVal != null) {
+                                                                        try { Color(android.graphics.Color.parseColor(colorVal)) } catch (e: Exception) { Color(0xFF3B82F6) }
+                                                                    } else {
+                                                                        Color(0xFF3B82F6)
+                                                                    }
+                                                                    Text("A", fontSize = 18.sp, fontWeight = FontWeight.Black, color = displayColor)
                                                                 }
                                                             )
                                                             RibbonIconButton(
@@ -2655,13 +2695,20 @@ fun WorkspacePane(
                                                                 onClick = {
                                                                     onAction("highlight")
                                                                 },
+                                                                isSelected = "highlight" in activeFormatting,
                                                                 colorSchemeColor = groupColor,
                                                                 modifier = Modifier.weight(1f),
                                                                 customContent = {
+                                                                    val hlColor = cursorHighlightColorVal
+                                                                    val tintColor = if (hlColor != null) {
+                                                                        try { Color(android.graphics.Color.parseColor(hlColor)) } catch (e: Exception) { Color(0xFFFDE047).copy(alpha = 0.6f) }
+                                                                    } else {
+                                                                        if (isSystemInDarkTheme()) Color(0xFF94A3B8) else Color(0xFF64748B)
+                                                                    }
                                                                     Icon(
                                                                         imageVector = Icons.Outlined.Edit,
                                                                         contentDescription = "Highlight",
-                                                                        tint = if (isSystemInDarkTheme()) Color(0xFF94A3B8) else Color(0xFF64748B),
+                                                                        tint = tintColor,
                                                                         modifier = Modifier.size(18.dp).rotate(-45f)
                                                                     )
                                                                 }

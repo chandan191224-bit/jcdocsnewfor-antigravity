@@ -36,3 +36,7 @@ Added font size and font family detection in `onTextFieldValueChange` callback (
 - `gradlew :app:assembleDebug` succeeds
 - `gradlew :app:installDebug` — installed on device
 - All font formatting operations confirmed working on device
+
+### Follow-up — Active formatting indicators + crash fix
+- **Active formatting indicators** — added `derivedStateOf` blocks (`activeFormatting`, `cursorFontColorVal`, `cursorHighlightColorVal`) that detect formatting spans at cursor position. Each button's `isSelected` reflects whether that formatting type is active at the cursor. Font Color "A" icon dynamically shows the applied color; Highlight icon tint reflects active highlight.
+- **Crash fix** — `StringIndexOutOfBoundsException` from reversed selections (right-to-left where `start > end`). Normalized selection boundaries with `minOf`/`maxOf` in `applyFormatting` and `clear_format` before passing to `substring` and `DocFormatRepository` functions.
