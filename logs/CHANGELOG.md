@@ -70,6 +70,7 @@ Added Color Picker dialog for font color/highlight, fixed icon highlighting not 
 5. **Color/highlight toggle** — clicking font color/highlight button when span already exists at selection removes it; otherwise opens picker.
 6. **Ribbon title fix** — font group now displays "FONT" instead of "T FONT".
 7. **AI Copilot Suite & Document Review groups** — completely removed from Home ribbon.
+8. **Page split formatting fix** — added `DocFormatRepository.moveSpanRange()` to adjust span absolute positions when content overflows to the next page. Previously spans remained at their old absolute positions after a page split, causing formatting to disappear or corrupt. The fix also handles span straddling across the split boundary and trimmed whitespace in the overflow.
 
 ### Files Modified
 - `app/src/main/java/com/example/ui/DocEditorScreen.kt`

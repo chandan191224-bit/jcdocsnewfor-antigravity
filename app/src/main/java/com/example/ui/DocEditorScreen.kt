@@ -188,6 +188,53 @@ object DocFormatRepository {
             }
         }
     }
+
+    fun moveSpanRange(docId: Int, fromStart: Int, fromEnd: Int, toStart: Int) {
+        val list = getSpans(docId)
+        if (fromStart >= fromEnd) return
+        val shift = toStart - fromStart
+        val added = mutableListOf<DocFormatSpan>()
+        val it = list.iterator()
+        while (it.hasNext()) {
+            val span = it.next()
+            when {
+                // entirely within moved range
+                span.start >= fromStart && span.end <= fromEnd -> {
+                    it.remove()
+                    span.start += shift
+                    span.end += shift
+                    if (span.end > span.start) added.add(span)
+                }
+                // starts before, ends within moved range
+                span.start < fromStart && span.end > fromStart && span.end <= fromEnd -> {
+                    val oldEnd = span.end
+                    span.end = fromStart
+                    val newSpan = DocFormatSpan(toStart, toStart + (oldEnd - fromStart), span.type, span.value)
+                    if (newSpan.end > newSpan.start) added.add(newSpan)
+                }
+                // starts within moved range, ends after
+                span.start >= fromStart && span.start < fromEnd && span.end > fromEnd -> {
+                    val oldStart = span.start
+                    it.remove()
+                    val newSpan = DocFormatSpan(toStart + (oldStart - fromStart), toStart + (fromEnd - fromStart), span.type, span.value)
+                    if (newSpan.end > newSpan.start) added.add(newSpan)
+                    span.start = fromEnd
+                    span.end = fromEnd + (span.end - fromEnd)
+                    added.add(span)
+                }
+                // starts before, ends after (covers entire range)
+                span.start < fromStart && span.end > fromEnd -> {
+                    val oldEnd = span.end
+                    span.end = fromStart
+                    val newSpan = DocFormatSpan(toStart, toStart + (fromEnd - fromStart), span.type, span.value)
+                    if (newSpan.end > newSpan.start) added.add(newSpan)
+                    val rightSpan = DocFormatSpan(fromEnd, oldEnd, span.type, span.value)
+                    added.add(rightSpan)
+                }
+            }
+        }
+        list.addAll(added)
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -5146,7 +5193,20 @@ fun WordDocumentEditor(
                                         val origLen = overflowContent.length
                                         overflowContent = overflowContent.trimStart(' ', '\n')
                                         val trimmedChars = origLen - overflowContent.length
-                                        
+
+                                        val absoluteOffset = pages.take(pageIndex).sumOf { it.length + 1 }
+                                        if (trimmedChars > 0) {
+                                            DocFormatRepository.shiftSpans(docId, absoluteOffset + actualSplit, trimmedChars, 0)
+                                        }
+                                        if (overflowContent.isNotEmpty()) {
+                                            DocFormatRepository.moveSpanRange(
+                                                docId,
+                                                absoluteOffset + actualSplit,
+                                                absoluteOffset + actualSplit + overflowContent.length,
+                                                absoluteOffset + keptContent.length + 1
+                                            )
+                                        }
+
                                         newPages[pageIndex] = keptContent
                                         if (pageIndex + 1 < newPages.size) {
                                             newPages[pageIndex + 1] = overflowContent + newPages[pageIndex + 1]

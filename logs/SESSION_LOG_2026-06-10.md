@@ -49,3 +49,8 @@ Added font size and font family detection in `onTextFieldValueChange` callback (
 - **Color/highlight toggle** — clicking font color or highlight when already active at the selection removes it (toggle off); otherwise opens the picker.
 - **Font group title** — fixed from "T FONT" to "FONT".
 - **AI Copilot Suite & Document Review groups** — completely removed from Home ribbon.
+
+### Follow-up — Page split formatting corruption fix
+When content overflowed from one page to the next (page split), formatting spans were not adjusted for the new absolute positions. A span at positions 50-55 on page N would stay at 50-55 even after the content moved to page N+1 (where the same logical text is now at positions 100-105), causing formatting to disappear or apply to wrong text.
+
+**Fix**: Added `DocFormatRepository.moveSpanRange()` that moves a range of spans from one absolute position to another, handling straddling spans (splitting them across the boundary). Called from `LaunchedEffect(splitOffset)` after trimming leading whitespace from overflow content.
