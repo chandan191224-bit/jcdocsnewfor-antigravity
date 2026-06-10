@@ -96,25 +96,23 @@ object DocFormatRepository {
     
     fun removeSpansRange(docId: Int, start: Int, end: Int) {
         val list = getSpans(docId)
+        val toAdd = mutableListOf<DocFormatSpan>()
         val iterator = list.iterator()
         while (iterator.hasNext()) {
             val span = iterator.next()
-            // If the span is fully within the selection, remove it.
             if (span.start >= start && span.end <= end) {
                 iterator.remove()
             } else if (span.start < start && span.end > end) {
-                // If span covers the selection entirely, split it.
                 val oldEnd = span.end
                 span.end = start
-                list.add(DocFormatSpan(end, oldEnd, span.type, span.value))
+                toAdd.add(DocFormatSpan(end, oldEnd, span.type, span.value))
             } else if (span.start < start && span.end > start && span.end <= end) {
-                // If span overlaps with the beginning of the selection.
                 span.end = start
             } else if (span.start >= start && span.start < end && span.end > end) {
-                // If span overlaps with the end of the selection.
                 span.start = end
             }
         }
+        list.addAll(toAdd)
     }
     
     fun hasSpan(docId: Int, type: String, start: Int, end: Int): Boolean {
@@ -124,6 +122,7 @@ object DocFormatRepository {
     
     fun removeSpanTypeRange(docId: Int, type: String, start: Int, end: Int) {
         val list = getSpans(docId)
+        val toAdd = mutableListOf<DocFormatSpan>()
         val iterator = list.iterator()
         while (iterator.hasNext()) {
             val span = iterator.next()
@@ -135,7 +134,7 @@ object DocFormatRepository {
                     // If span covers the selection entirely, split it.
                     val oldEnd = span.end
                     span.end = start
-                    list.add(DocFormatSpan(end, oldEnd, span.type, span.value))
+                    toAdd.add(DocFormatSpan(end, oldEnd, span.type, span.value))
                 } else if (span.start < start && span.end > start && span.end <= end) {
                     // If span overlaps with the beginning of the selection.
                     span.end = start
@@ -145,11 +144,14 @@ object DocFormatRepository {
                 }
             }
         }
+        list.addAll(toAdd)
     }
     
     fun applySpan(docId: Int, type: String, value: String, start: Int, end: Int) {
         val list = getSpans(docId)
         if (start >= end) return
+
+        val isParagraphLevel = type == "alignment" || type == "lineSpacing"
 
         // 1. Remove/update any existing spans that overlap with the new span
         val iterator = list.iterator()
@@ -159,16 +161,34 @@ object DocFormatRepository {
         while (iterator.hasNext()) {
             val span = iterator.next()
             if (span.type == type && span.value == value) {
-                // Check if span overlaps or is adjacent
-                if (span.end >= newStart && span.start <= newEnd) {
-                    newStart = minOf(newStart, span.start)
-                    newEnd = maxOf(newEnd, span.end)
-                    iterator.remove()
+                // For paragraph-level spans (alignment, lineSpacing), only remove
+                // overlapping spans within the same paragraph boundaries — don't
+                // merge across paragraphs, since each paragraph needs its own
+                // ParagraphStyle in RichTextVisualTransformation.
+                if (isParagraphLevel) {
+                    if (span.start >= start && span.end <= end) {
+                        iterator.remove()
+                    } else if (span.start < start && span.end > end) {
+                        val oldEnd = span.end
+                        span.end = start
+                        list.add(DocFormatSpan(end, oldEnd, span.type, span.value))
+                    } else if (span.start < start && span.end > start && span.end <= end) {
+                        span.end = start
+                    } else if (span.start >= start && span.start < end && span.end > end) {
+                        span.start = end
+                    }
+                } else {
+                    // Character-level spans (bold, italic, fontSize, etc.): merge adjacent/overlapping
+                    if (span.end >= newStart && span.start <= newEnd) {
+                        newStart = minOf(newStart, span.start)
+                        newEnd = maxOf(newEnd, span.end)
+                        iterator.remove()
+                    }
                 }
             }
         }
         
-        // 2. Add the merged span
+        // 2. Add the span
         list.add(DocFormatSpan(newStart, newEnd, type, value))
     }
     
@@ -1107,7 +1127,6 @@ fun executeRibbonAction(
     onThemeChange: (String) -> Unit,
     onMarginsChange: (androidx.compose.ui.unit.Dp) -> Unit,
     onColumnsChange: (Int) -> Unit,
-    onAlignmentChange: (androidx.compose.ui.text.style.TextAlign) -> Unit,
     onFontSizeChange: (androidx.compose.ui.unit.TextUnit) -> Unit,
     onLandscapeChange: (Boolean) -> Unit,
     onShowCustomMarginsDialog: () -> Unit = {},
@@ -1224,24 +1243,134 @@ fun executeRibbonAction(
             }
         }
         "align_left" -> {
-            onAlignmentChange(TextAlign.Left)
-            showToast("Text alignment set to Left")
+            if (textFieldValue != null) {
+                try {
+                    val selStart = textFieldValue.selection.start
+                    val selEnd = textFieldValue.selection.end
+                    val paraRanges = getParagraphRangesInRange(draftContent, selStart, selEnd)
+                    val allMatch = paraRanges.all { r -> DocFormatRepository.getSpans(selectedDoc.id).any { it.type == "alignment" && it.start <= r.start && it.end > r.start && it.value == "left" } }
+                    for (r in paraRanges) {
+                        val paraEnd = r.endInclusive + 1
+                        DocFormatRepository.removeSpanTypeRange(selectedDoc.id, "alignment", r.start, paraEnd)
+                        if (!allMatch) {
+                            DocFormatRepository.applySpan(selectedDoc.id, "alignment", "left", r.start, paraEnd)
+                        }
+                    }
+                    val spansAfter = DocFormatRepository.getSpans(selectedDoc.id).toList()
+                    android.util.Log.d("AlignDebug", "align_left: spansAfter=${spansAfter.map { "${it.type}[${it.start},${it.end}):${it.value}" }}")
+                    onFormatVersionChange(formatVersion + 1)
+                    showToast(if (allMatch) "Alignment removed" else "Text alignment set to Left")
+                } catch (e: Exception) {
+                    android.util.Log.e("Align", "left error", e)
+                    showToast("Align error: ${e.message}")
+                }
+            }
         }
         "align_center" -> {
-            onAlignmentChange(TextAlign.Center)
-            showToast("Text alignment set to Center")
+            if (textFieldValue != null) {
+                try {
+                    val selStart = textFieldValue.selection.start
+                    val selEnd = textFieldValue.selection.end
+                    val paraRanges = getParagraphRangesInRange(draftContent, selStart, selEnd)
+                    android.util.Log.d("AlignDebug", "align_center: draftContent='${draftContent.take(50)}', sel=$selStart-$selEnd, paraRanges=$paraRanges")
+                    val spansBefore = DocFormatRepository.getSpans(selectedDoc.id).toList()
+                    android.util.Log.d("AlignDebug", "align_center: spansBefore=${spansBefore.map { "${it.type}[${it.start},${it.end}):${it.value}" }}")
+                    val allMatch = paraRanges.all { r -> DocFormatRepository.getSpans(selectedDoc.id).any { it.type == "alignment" && it.start <= r.start && it.end > r.start && it.value == "center" } }
+                    for (r in paraRanges) {
+                        val paraEnd = r.endInclusive + 1
+                        DocFormatRepository.removeSpanTypeRange(selectedDoc.id, "alignment", r.start, paraEnd)
+                        if (!allMatch) {
+                            DocFormatRepository.applySpan(selectedDoc.id, "alignment", "center", r.start, paraEnd)
+                        }
+                    }
+                    val spansAfter = DocFormatRepository.getSpans(selectedDoc.id).toList()
+                    android.util.Log.d("AlignDebug", "align_center: spansAfter=${spansAfter.map { "${it.type}[${it.start},${it.end}):${it.value}" }}")
+                    onFormatVersionChange(formatVersion + 1)
+                    showToast(if (allMatch) "Alignment removed" else "Text alignment set to Center")
+                } catch (e: Exception) {
+                    android.util.Log.e("Align", "center error", e)
+                    showToast("Align error: ${e.message}")
+                }
+            }
         }
         "align_right" -> {
-            onAlignmentChange(TextAlign.Right)
-            showToast("Text alignment set to Right")
+            if (textFieldValue != null) {
+                try {
+                    val selStart = textFieldValue.selection.start
+                    val selEnd = textFieldValue.selection.end
+                    val paraRanges = getParagraphRangesInRange(draftContent, selStart, selEnd)
+                    val allMatch = paraRanges.all { r -> DocFormatRepository.getSpans(selectedDoc.id).any { it.type == "alignment" && it.start <= r.start && it.end > r.start && it.value == "right" } }
+                    for (r in paraRanges) {
+                        val paraEnd = r.endInclusive + 1
+                        DocFormatRepository.removeSpanTypeRange(selectedDoc.id, "alignment", r.start, paraEnd)
+                        if (!allMatch) {
+                            DocFormatRepository.applySpan(selectedDoc.id, "alignment", "right", r.start, paraEnd)
+                        }
+                    }
+                    val spansAfter = DocFormatRepository.getSpans(selectedDoc.id).toList()
+                    android.util.Log.d("AlignDebug", "align_right: spansAfter=${spansAfter.map { "${it.type}[${it.start},${it.end}):${it.value}" }}")
+                    onFormatVersionChange(formatVersion + 1)
+                    showToast(if (allMatch) "Alignment removed" else "Text alignment set to Right")
+                } catch (e: Exception) {
+                    android.util.Log.e("Align", "right error", e)
+                    showToast("Align error: ${e.message}")
+                }
+            }
         }
         "align_justify" -> {
-            onAlignmentChange(TextAlign.Justify)
-            showToast("Text alignment set to Justified")
+            if (textFieldValue != null) {
+                try {
+                    val selStart = textFieldValue.selection.start
+                    val selEnd = textFieldValue.selection.end
+                    val paraRanges = getParagraphRangesInRange(draftContent, selStart, selEnd)
+                    val allMatch = paraRanges.all { r -> DocFormatRepository.getSpans(selectedDoc.id).any { it.type == "alignment" && it.start <= r.start && it.end > r.start && it.value == "justify" } }
+                    for (r in paraRanges) {
+                        val paraEnd = r.endInclusive + 1
+                        DocFormatRepository.removeSpanTypeRange(selectedDoc.id, "alignment", r.start, paraEnd)
+                        if (!allMatch) {
+                            DocFormatRepository.applySpan(selectedDoc.id, "alignment", "justify", r.start, paraEnd)
+                        }
+                    }
+                    val spansAfter = DocFormatRepository.getSpans(selectedDoc.id).toList()
+                    android.util.Log.d("AlignDebug", "align_justify: spansAfter=${spansAfter.map { "${it.type}[${it.start},${it.end}):${it.value}" }}")
+                    onFormatVersionChange(formatVersion + 1)
+                    showToast(if (allMatch) "Alignment removed" else "Text alignment set to Justified")
+                } catch (e: Exception) {
+                    android.util.Log.e("Align", "justify error", e)
+                    showToast("Align error: ${e.message}")
+                }
+            }
         }
-        "line_spacing" -> {
-            // Placeholder: for now just show a toast, expansion to dropdown needed
-            showToast("Line spacing options (1.0, 1.15, 1.5, 2.0)")
+        "indent_inc" -> {
+            if (textFieldValue != null) {
+                val pos = textFieldValue.selection.start
+                val para = getParagraphText(draftContent, pos)
+                val leadingSpaces = para.takeWhile { it == ' ' }.length
+                val newLeading = minOf(leadingSpaces + 4, 40)
+                val newPara = " ".repeat(newLeading) + para.trimStart()
+                val newText = replaceParagraphText(draftContent, pos, newPara)
+                onContentChange(newText)
+                val cursorShift = newLeading - leadingSpaces
+                onTextFieldValueChange?.invoke(textFieldValue.copy(text = newText, selection = TextRange(pos + cursorShift)))
+                showToast("Indent increased")
+            }
+        }
+        "indent_dec" -> {
+            if (textFieldValue != null) {
+                val pos = textFieldValue.selection.start
+                val para = getParagraphText(draftContent, pos)
+                val leadingSpaces = para.takeWhile { it == ' ' }.length
+                val newLeading = maxOf(leadingSpaces - 4, 0)
+                val newPara = " ".repeat(newLeading) + para.trimStart()
+                val newText = replaceParagraphText(draftContent, pos, newPara)
+                onContentChange(newText)
+                val cursorShift = newLeading - leadingSpaces
+                onTextFieldValueChange?.invoke(textFieldValue.copy(text = newText, selection = TextRange(pos + cursorShift)))
+                showToast("Indent decreased")
+            }
+        }
+        "multilevel" -> {
+            showToast("Multilevel list — select a list style from Bullets or Numbers first")
         }
         "theme_white" -> {
             onThemeChange("white")
@@ -1320,7 +1449,6 @@ fun executeRibbonAction(
                     .replace("</u>", "")
                 onContentChange(cleaned)
             }
-            onAlignmentChange(TextAlign.Left)
             onFontSizeChange(14.sp)
             showToast("All text styling and layout formatting tags cleared")
         }
@@ -1814,6 +1942,249 @@ fun ColorPickerDialog(
 }
 
 @Composable
+fun BulletStyleDialog(
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = if (isSystemInDarkTheme()) Color(0xFF2E2E32) else Color.White),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(16.dp)
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text("Bullet Style", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = if (isSystemInDarkTheme()) Color.White else Color.Black)
+                Spacer(Modifier.height(12.dp))
+                Column(modifier = Modifier.fillMaxWidth().heightIn(max = 200.dp).verticalScroll(rememberScrollState())) {
+                    val rows = BulletChars.chunked(4)
+                    rows.forEach { row ->
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                            row.forEach { char ->
+                                Box(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (isSystemInDarkTheme()) Color(0xFF1E1E22) else Color(0xFFF1F3F6))
+                                        .clickable { onSelect(char) },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(char, fontSize = 24.sp, color = if (isSystemInDarkTheme()) Color.White else Color.Black)
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = { onDismiss() }) { Text("Cancel") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun NumberFormatDialog(
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val formats = listOf("1." to "1, 2, 3...", "a)" to "a), b), c)...", "A." to "A., B., C...", "i)" to "i), ii), iii)...", "I." to "I., II., III...")
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = if (isSystemInDarkTheme()) Color(0xFF2E2E32) else Color.White),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(16.dp)
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text("Numbering Format", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = if (isSystemInDarkTheme()) Color.White else Color.Black)
+                Spacer(Modifier.height(12.dp))
+                formats.forEach { (fmt, desc) ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (isSystemInDarkTheme()) Color(0xFF1E1E22) else Color(0xFFF1F3F6))
+                            .clickable { onSelect(fmt) }
+                            .padding(horizontal = 12.dp),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        Text(desc, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = if (isSystemInDarkTheme()) Color.White else Color.Black)
+                    }
+                    Spacer(Modifier.height(6.dp))
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = { onDismiss() }) { Text("Cancel") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun LineSpacingDialog(
+    currentSpacing: Float,
+    onSelect: (Float) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val options = listOf(1.0f, 1.15f, 1.5f, 2.0f, 2.5f, 3.0f)
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = if (isSystemInDarkTheme()) Color(0xFF2E2E32) else Color.White),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(16.dp)
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text("Line Spacing", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = if (isSystemInDarkTheme()) Color.White else Color.Black)
+                Spacer(Modifier.height(12.dp))
+                options.forEach { spacing ->
+                    val label = when (spacing) {
+                        1.0f -> "Single (1.0)"
+                        1.15f -> "1.15"
+                        1.5f -> "1.5"
+                        2.0f -> "Double (2.0)"
+                        else -> "${spacing}"
+                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                if (spacing == currentSpacing) DocWordColor.copy(alpha = 0.15f)
+                                else if (isSystemInDarkTheme()) Color(0xFF1E1E22) else Color(0xFFF1F3F6)
+                            )
+                            .clickable { onSelect(spacing) }
+                            .padding(horizontal = 12.dp),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        Text(label, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = if (isSystemInDarkTheme()) Color.White else Color.Black)
+                    }
+                    Spacer(Modifier.height(6.dp))
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = { onDismiss() }) { Text("Cancel") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun BordersDialog(
+    onApply: (sides: Set<String>, style: String, color: String, width: Float) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var top by remember { mutableStateOf(false) }
+    var bottom by remember { mutableStateOf(false) }
+    var left by remember { mutableStateOf(false) }
+    var right by remember { mutableStateOf(false) }
+    var borderStyle by remember { mutableStateOf("solid") }
+    var borderColor by remember { mutableStateOf("#000000") }
+    var borderWidth by remember { mutableStateOf(1f) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = if (isSystemInDarkTheme()) Color(0xFF2E2E32) else Color.White),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(16.dp)
+        ) {
+            Column(modifier = Modifier.padding(20.dp).verticalScroll(rememberScrollState())) {
+                Text("Borders", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = if (isSystemInDarkTheme()) Color.White else Color.Black)
+                Spacer(Modifier.height(12.dp))
+
+                Text("Sides", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (isSystemInDarkTheme()) Color.White.copy(alpha = 0.7f) else Color.Gray)
+                Spacer(Modifier.height(6.dp))
+                val sides = listOf("Top" to top, "Bottom" to bottom, "Left" to left, "Right" to right)
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    sides.forEach { (label, checked) ->
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(40.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (checked) DocWordColor else if (isSystemInDarkTheme()) Color(0xFF1E1E22) else Color(0xFFF1F3F6))
+                                .clickable {
+                                    when (label) { "Top" -> top = !top; "Bottom" -> bottom = !bottom; "Left" -> left = !left; "Right" -> right = !right }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (checked) Color.White else if (isSystemInDarkTheme()) Color.White.copy(alpha = 0.7f) else Color.DarkGray)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+
+                Text("Style", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (isSystemInDarkTheme()) Color.White.copy(alpha = 0.7f) else Color.Gray)
+                Spacer(Modifier.height(6.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("solid", "dotted", "dashed", "double").forEach { style ->
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(40.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (borderStyle == style) DocWordColor else if (isSystemInDarkTheme()) Color(0xFF1E1E22) else Color(0xFFF1F3F6))
+                                .clickable { borderStyle = style },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(style.replaceFirstChar { it.uppercase() }, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = if (borderStyle == style) Color.White else if (isSystemInDarkTheme()) Color.White.copy(alpha = 0.7f) else Color.DarkGray)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+
+                Text("Color", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (isSystemInDarkTheme()) Color.White.copy(alpha = 0.7f) else Color.Gray)
+                Spacer(Modifier.height(6.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("#000000", "#333333", "#666666", "#999999", "#CC0000", "#0066CC", "#339933").forEach { hex ->
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(try { Color(android.graphics.Color.parseColor(hex)) } catch (e: Exception) { Color.Gray })
+                                .border(if (borderColor == hex) 3.dp else 1.dp, if (borderColor == hex) DocWordColor else if (isSystemInDarkTheme()) Color.White.copy(alpha = 0.2f) else Color.Black.copy(alpha = 0.1f), RoundedCornerShape(6.dp))
+                                .clickable { borderColor = hex }
+                        )
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+
+                Text("Width: ${borderWidth.toInt()}pt", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (isSystemInDarkTheme()) Color.White.copy(alpha = 0.7f) else Color.Gray)
+                Spacer(Modifier.height(4.dp))
+                Slider(
+                    value = borderWidth,
+                    onValueChange = { borderWidth = it },
+                    valueRange = 0.5f..6f,
+                    steps = 10
+                )
+                Spacer(Modifier.height(16.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = { onDismiss() }) { Text("Cancel") }
+                    Spacer(Modifier.width(8.dp))
+                    Button(onClick = {
+                        val sidesSet = mutableSetOf<String>()
+                        if (top) sidesSet.add("top")
+                        if (bottom) sidesSet.add("bottom")
+                        if (left) sidesSet.add("left")
+                        if (right) sidesSet.add("right")
+                        onApply(sidesSet, borderStyle, borderColor, borderWidth)
+                    }) { Text("Apply") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun RibbonDropdown(
     selectedValue: String,
     options: List<String>,
@@ -2072,7 +2443,6 @@ fun WorkspacePane(
         var editorTheme by remember { mutableStateOf("white") }
         var pageMargins by remember { mutableStateOf(24.dp) }
         var columnCount by remember { mutableStateOf(1) }
-        var textAlignment by remember { mutableStateOf(TextAlign.Left) }
         var fontSize by remember { mutableStateOf(16.sp) }
         var isLandscape by remember { mutableStateOf(false) }
 
@@ -2127,6 +2497,22 @@ fun WorkspacePane(
                 if (pos < 0) null else spans.find { it.type == "highlight" && it.start <= pos && it.end > pos }?.value
             }
         }
+        val cursorAlignmentVal by remember {
+            derivedStateOf {
+                formatVersion
+                val spans = DocFormatRepository.getSpans(selectedDoc.id)
+                val pos = editorTextFieldValue.selection.start
+                if (pos < 0) null else spans.find { it.type == "alignment" && it.start <= pos && it.end > pos }?.value
+            }
+        }
+        val cursorLineSpacingVal by remember {
+            derivedStateOf {
+                formatVersion
+                val spans = DocFormatRepository.getSpans(selectedDoc.id)
+                val pos = editorTextFieldValue.selection.start
+                if (pos < 0) null else spans.find { it.type == "lineSpacing" && it.start <= pos && it.end > pos }?.value
+            }
+        }
         
         fun showUndoRedoFeedback(msg: String) {
             android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
@@ -2141,7 +2527,6 @@ fun WorkspacePane(
                 editorTheme = editorTheme,
                 pageMargins = pageMargins,
                 columnCount = columnCount,
-                textAlignment = textAlignment,
                 fontSize = fontSize,
                 isLandscape = isLandscape,
                 pageNumberPosition = pageNumberPosition,
@@ -2171,7 +2556,6 @@ fun WorkspacePane(
                 editorTheme = restored.editorTheme
                 pageMargins = restored.pageMargins
                 columnCount = restored.columnCount
-                textAlignment = restored.textAlignment
                 fontSize = restored.fontSize
                 isLandscape = restored.isLandscape
                 pageNumberPosition = restored.pageNumberPosition
@@ -2199,7 +2583,6 @@ fun WorkspacePane(
                 editorTheme = restored.editorTheme
                 pageMargins = restored.pageMargins
                 columnCount = restored.columnCount
-                textAlignment = restored.textAlignment
                 fontSize = restored.fontSize
                 isLandscape = restored.isLandscape
                 pageNumberPosition = restored.pageNumberPosition
@@ -2243,6 +2626,14 @@ fun WorkspacePane(
         var activeFontSize by remember { mutableStateOf("16") }
         var showFontColorPicker by remember { mutableStateOf(false) }
         var showHighlightPicker by remember { mutableStateOf(false) }
+
+        var showBulletStyleDialog by remember { mutableStateOf(false) }
+        var showNumberFormatDialog by remember { mutableStateOf(false) }
+        var showLineSpacingDialog by remember { mutableStateOf(false) }
+        var showBordersDialog by remember { mutableStateOf(false) }
+        var showShadingPicker by remember { mutableStateOf(false) }
+        var pageBackgroundColor by remember { mutableStateOf<Color?>(null) }
+        var pendingParaAction by remember { mutableStateOf<String?>(null) }
 
         val coroutineScope = rememberCoroutineScope()
         val snackbarHostState = remember { SnackbarHostState() }
@@ -2326,12 +2717,12 @@ fun WorkspacePane(
                                 onContentChange = onContentChange,
                                 editorTheme = editorTheme,
                                 onEditorThemeChange = { editorTheme = it },
+                                pageBackgroundColor = pageBackgroundColor,
                                 pageMargins = pageMargins,
                                 columnCount = columnCount,
-                                textAlignment = textAlignment,
                                 fontSize = fontSize,
                                 formatVersion = formatVersion,
-                                isLandscape = isLandscape,
+                                                isLandscape = isLandscape,
                                 pageFormat = pageFormat,
                                 customDimensions = customDimensions,
                                 pageNumberPosition = pageNumberPosition,
@@ -2539,7 +2930,6 @@ fun WorkspacePane(
                                         onThemeChange = { editorTheme = it },
                                         onMarginsChange = { pageMargins = it },
                                         onColumnsChange = { columnCount = it },
-                                        onAlignmentChange = { textAlignment = it },
                                         onFontSizeChange = { fontSize = it },
                                         onLandscapeChange = { isLandscape = it },
                                         onShowCustomMarginsDialog = { showCustomMarginsDialog = true },
@@ -2605,7 +2995,6 @@ fun WorkspacePane(
                                             onThemeChange = { editorTheme = it },
                                             onMarginsChange = { pageMargins = it },
                                             onColumnsChange = { columnCount = it },
-                                            onAlignmentChange = { textAlignment = it },
                                             onFontSizeChange = { fontSize = it },
                                             onLandscapeChange = { isLandscape = it },
                                             onShowCustomMarginsDialog = { showCustomMarginsDialog = true },
@@ -3227,50 +3616,94 @@ fun WorkspacePane(
                                                         val btnBg = if (isSystemInDarkTheme()) Color(0xFF323236) else Color(0xFFF1F3F6)
                                                         val accent = if (selectedDoc.type == "word") DocWordColor else if (selectedDoc.type == "sheet") DocSheetColor else DocSlideColor
                                                         val textColor = if (isSystemInDarkTheme()) Color.White else Color.Black
-                                                        val sectionLabelColor = if (isSystemInDarkTheme()) Color(0xFF9A9A9A) else Color(0xFF777777)
-                                                        val dividerColor = if (isSystemInDarkTheme()) Color(0xFF3A3A3C) else Color(0xFFE0E0E0)
 
                                                         @Composable
-                                                        fun ParaCard(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, action: String) {
-                                                            Box(modifier = Modifier.weight(1f).height(68.dp).clip(RoundedCornerShape(8.dp)).background(btnBg).clickable { onAction(action) }, contentAlignment = Alignment.Center) {
+                                                        fun ParaCard(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, action: String, isSelected: Boolean = false) {
+                                                            val cardBg = if (isSelected) accent.copy(alpha = 0.35f) else btnBg
+                                                            Box(modifier = Modifier.weight(1f).height(56.dp).clip(RoundedCornerShape(8.dp)).background(cardBg).clickable { onAction(action) }, contentAlignment = Alignment.Center) {
                                                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                    Icon(icon, contentDescription = label, tint = accent, modifier = Modifier.size(20.dp))
-                                                                    Spacer(Modifier.height(2.dp))
-                                                                    Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                                    Icon(icon, contentDescription = label, tint = accent, modifier = Modifier.size(18.dp))
+                                                                    Spacer(Modifier.height(1.dp))
+                                                                    Text(label, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                                                 }
                                                             }
                                                         }
 
-                                                        // --- LIST GROUP ---
-                                                        Text("List", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = sectionLabelColor, modifier = Modifier.padding(start = 2.dp))
-                                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                            ParaCard(Icons.Default.FormatListBulleted, "Bullets", "bullets")
-                                                            ParaCard(Icons.Default.FormatListNumbered, "Numbers", "numbers")
-                                                            ParaCard(Icons.Outlined.Menu, "Multilevel", "multilevel")
+                                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                            ParaCard(Icons.Default.FormatAlignLeft, "Left", "align_left", cursorAlignmentVal == "left")
+                                                            ParaCard(Icons.Outlined.FormatAlignCenter, "Center", "align_center", cursorAlignmentVal == "center")
+                                                            ParaCard(Icons.Default.FormatAlignRight, "Right", "align_right", cursorAlignmentVal == "right")
+                                                            ParaCard(Icons.Outlined.FormatAlignJustify, "Justify", "align_justify", cursorAlignmentVal == "justify")
+                                                            val shadingActive = pageBackgroundColor != null
+                                                            Box(modifier = Modifier.weight(1f).height(56.dp).clip(RoundedCornerShape(8.dp)).background(if (shadingActive) accent.copy(alpha = 0.35f) else btnBg).clickable {
+                                                                if (shadingActive) {
+                                                                    pageBackgroundColor = null
+                                                                    formatVersion++
+                                                                } else {
+                                                                    showShadingPicker = true
+                                                                }
+                                                            }, contentAlignment = Alignment.Center) {
+                                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                                    Icon(Icons.Outlined.FormatColorFill, contentDescription = "Shading", tint = accent, modifier = Modifier.size(18.dp))
+                                                                    Spacer(Modifier.height(1.dp))
+                                                                    Text("Shading", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                                }
+                                                            }
+                                                            val borderActive = "border" in activeFormatting
+                                                            Box(modifier = Modifier.weight(1f).height(56.dp).clip(RoundedCornerShape(8.dp)).background(if (borderActive) accent.copy(alpha = 0.35f) else btnBg).clickable {
+                                                                if (borderActive) {
+                                                                    val pos = editorTextFieldValue.selection.start
+                                                                    val pRange = getParagraphRange(draftContent, pos)
+                                                                    val paraEnd = pRange.endInclusive + 1
+                                                                    DocFormatRepository.removeSpanTypeRange(selectedDoc.id, "border", pRange.start, paraEnd)
+                                                                    formatVersion++
+                                                                } else {
+                                                                    showBordersDialog = true
+                                                                }
+                                                            }, contentAlignment = Alignment.Center) {
+                                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                                    Icon(Icons.Outlined.BorderAll, contentDescription = "Borders", tint = accent, modifier = Modifier.size(18.dp))
+                                                                    Spacer(Modifier.height(1.dp))
+                                                                    Text("Borders", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                                }
+                                                            }
                                                         }
-
-                                                        // --- INDENT & SPACING GROUP ---
-                                                        Text("Indent & Spacing", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = sectionLabelColor, modifier = Modifier.padding(start = 2.dp))
-                                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                            Box(modifier = Modifier.weight(1f).height(56.dp).clip(RoundedCornerShape(8.dp)).background(btnBg).clickable { showBulletStyleDialog = true; pendingParaAction = "bullets" }, contentAlignment = Alignment.Center) {
+                                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                                    Icon(Icons.Default.FormatListBulleted, contentDescription = "Bullets", tint = accent, modifier = Modifier.size(18.dp))
+                                                                    Spacer(Modifier.height(1.dp))
+                                                                    Text("Bullets", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                                }
+                                                            }
+                                                            Box(modifier = Modifier.weight(1f).height(56.dp).clip(RoundedCornerShape(8.dp)).background(btnBg).clickable { showNumberFormatDialog = true; pendingParaAction = "numbers" }, contentAlignment = Alignment.Center) {
+                                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                                    Icon(Icons.Default.FormatListNumbered, contentDescription = "Numbers", tint = accent, modifier = Modifier.size(18.dp))
+                                                                    Spacer(Modifier.height(1.dp))
+                                                                    Text("Numbers", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                                }
+                                                            }
+                                                            ParaCard(Icons.Outlined.Menu, "Multilevel", "multilevel")
                                                             ParaCard(Icons.Default.FormatIndentDecrease, "Dec", "indent_dec")
                                                             ParaCard(Icons.Default.FormatIndentIncrease, "Inc", "indent_inc")
-                                                            ParaCard(Icons.Outlined.ImportExport, "Spacing", "line_spacing")
-                                                        }
-
-                                                        // --- ALIGNMENT GROUP ---
-                                                        Text("Alignment", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = sectionLabelColor, modifier = Modifier.padding(start = 2.dp))
-                                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                            ParaCard(Icons.Default.FormatAlignLeft, "Left", "align_left")
-                                                            ParaCard(Icons.Outlined.FormatAlignCenter, "Center", "align_center")
-                                                            ParaCard(Icons.Default.FormatAlignRight, "Right", "align_right")
-                                                            ParaCard(Icons.Outlined.FormatAlignJustify, "Justify", "align_justify")
-                                                        }
-
-                                                        // --- FILL GROUP ---
-                                                        Text("Fill & Borders", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = sectionLabelColor, modifier = Modifier.padding(start = 2.dp))
-                                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                            ParaCard(Icons.Outlined.FormatColorFill, "Shading", "shading")
-                                                            ParaCard(Icons.Outlined.BorderAll, "Borders", "borders")
+                                                            val spacingActive = "lineSpacing" in activeFormatting
+                                                            Box(modifier = Modifier.weight(1f).height(56.dp).clip(RoundedCornerShape(8.dp)).background(if (spacingActive) accent.copy(alpha = 0.35f) else btnBg).clickable {
+                                                                if (spacingActive) {
+                                                                    val pos = editorTextFieldValue.selection.start
+                                                                    val pRange = getParagraphRange(draftContent, pos)
+                                                                    val paraEnd = pRange.endInclusive + 1
+                                                                    DocFormatRepository.removeSpanTypeRange(selectedDoc.id, "lineSpacing", pRange.start, paraEnd)
+                                                                    formatVersion++
+                                                                } else {
+                                                                    showLineSpacingDialog = true
+                                                                }
+                                                            }, contentAlignment = Alignment.Center) {
+                                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                                    Icon(Icons.Outlined.ImportExport, contentDescription = "Spacing", tint = accent, modifier = Modifier.size(18.dp))
+                                                                    Spacer(Modifier.height(1.dp))
+                                                                    Text(if (spacingActive && cursorLineSpacingVal != null) "${cursorLineSpacingVal}x" else "Spacing", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                                }
+                                                            }
                                                         }
                                                     }
                                                 }
@@ -3463,6 +3896,129 @@ fun WorkspacePane(
                                                     }
                                                 },
                                                 onDismiss = { showHighlightPicker = false }
+                                            )
+                                        }
+
+                                        if (showBulletStyleDialog) {
+                                            BulletStyleDialog(
+                                                onSelect = { char ->
+                                                    showBulletStyleDialog = false
+                                                    val pos = editorTextFieldValue.selection.start
+                                                    val para = getParagraphText(draftContent, pos)
+                                                    val (existingBullet, _) = detectListPrefix(para)
+                                                    if (existingBullet != null) {
+                                                        // Toggle off — remove existing bullet
+                                                        val newText = removeBulletFromPara(draftContent, pos)
+                                                        if (newText != draftContent) {
+                                                            onContentChange(newText)
+                                                            val newPos = (pos - 2).coerceAtLeast(0)
+                                                            editorTextFieldValue = TextFieldValue(text = newText, selection = TextRange(newPos))
+                                                        }
+                                                    } else {
+                                                        // Apply bullet
+                                                        val newText = applyBulletToPara(draftContent, pos, char)
+                                                        if (newText != draftContent) {
+                                                            onContentChange(newText)
+                                                            editorTextFieldValue = TextFieldValue(text = newText, selection = TextRange(pos + 2))
+                                                        }
+                                                    }
+                                                },
+                                                onDismiss = { showBulletStyleDialog = false }
+                                            )
+                                        }
+
+                                        if (showNumberFormatDialog) {
+                                            NumberFormatDialog(
+                                                onSelect = { fmt ->
+                                                    showNumberFormatDialog = false
+                                                    val pos = editorTextFieldValue.selection.start
+                                                    val para = getParagraphText(draftContent, pos)
+                                                    val (_, existingNum) = detectListPrefix(para)
+                                                    if (existingNum != null) {
+                                                        // Toggle off — remove number prefix
+                                                        val newText = removeBulletFromPara(draftContent, pos)
+                                                        if (newText != draftContent) {
+                                                            onContentChange(newText)
+                                                            editorTextFieldValue = TextFieldValue(text = newText, selection = TextRange(pos.coerceAtMost(newText.length)))
+                                                        }
+                                                    } else {
+                                                        // Apply number to current paragraph then renumber entire doc
+                                                        val newText = applyNumberToPara(draftContent, pos, fmt, 1)
+                                                        if (newText != draftContent) {
+                                                            val renumbered = renumberDocument(newText, fmt)
+                                                            onContentChange(renumbered)
+                                                            editorTextFieldValue = TextFieldValue(text = renumbered, selection = TextRange(pos.coerceAtMost(renumbered.length)))
+                                                        }
+                                                    }
+                                                },
+                                                onDismiss = { showNumberFormatDialog = false }
+                                            )
+                                        }
+
+                                        if (showLineSpacingDialog) {
+                                            val pos = editorTextFieldValue.selection.start
+                                            val currentLineSpacing = DocFormatRepository.getSpans(selectedDoc.id)
+                                                .firstOrNull { it.type == "lineSpacing" && it.start <= pos && it.end > pos }
+                                                ?.value?.toFloatOrNull() ?: 1.0f
+                                            LineSpacingDialog(
+                                                currentSpacing = currentLineSpacing,
+                                                onSelect = { spacing ->
+                                                    showLineSpacingDialog = false
+                                                    val selStart = editorTextFieldValue.selection.start
+                                                    val selEnd = editorTextFieldValue.selection.end
+                                                    try {
+                                                        val paraRanges = getParagraphRangesInRange(draftContent, selStart, selEnd)
+                                                        if (paraRanges.isEmpty()) return@LineSpacingDialog
+                                                        val allStart = paraRanges.first().start
+                                                        val lastPara = paraRanges.last()
+                                                        val allEnd = draftContent.indexOf('\n', lastPara.start).let { if (it == -1) draftContent.length else it + 1 }
+                                                        DocFormatRepository.removeSpanTypeRange(selectedDoc.id, "lineSpacing", allStart, allEnd)
+                                                        val spacingStr = spacing.toString()
+                                                        for (r in paraRanges) {
+                                                            val paraEnd = r.endInclusive + 1
+                                                            DocFormatRepository.applySpan(selectedDoc.id, "lineSpacing", spacingStr, r.start, paraEnd)
+                                                        }
+                                                        formatVersion++
+                                                    } catch (e: Exception) {
+                                                        android.util.Log.e("Spacing", "error", e)
+                                                        Toast.makeText(context, "Spacing error: ${e.message}", Toast.LENGTH_LONG).show()
+                                                    }
+                                                },
+                                                onDismiss = { showLineSpacingDialog = false }
+                                            )
+                                        }
+
+                                        if (showBordersDialog) {
+                                            BordersDialog(
+                                                onApply = { sides, style, color, width ->
+                                                    showBordersDialog = false
+                                                    val pos = editorTextFieldValue.selection.start
+                                                    val pRange = getParagraphRange(draftContent, pos)
+                                                    val paraEnd = pRange.endInclusive + 1
+                                                    val value = "${sides.joinToString(",")}|$style|$color|$width"
+                                                    DocFormatRepository.removeSpanTypeRange(selectedDoc.id, "border", pRange.start, paraEnd)
+                                                    DocFormatRepository.applySpan(selectedDoc.id, "border", value, pRange.start, paraEnd)
+                                                    formatVersion++
+                                                },
+                                                onDismiss = { showBordersDialog = false }
+                                            )
+                                        }
+
+                                        if (showShadingPicker) {
+                                            ColorPickerDialog(
+                                                colors = listOf("#FFFFFF", "#F2F2F2", "#D9D9D9", "#BFBFBF", "#A6A6A6", "#808080", "#FFFF00", "#00FF00", "#00FFFF", "#FF0000", "#0000FF", "#FF00FF", "#800000", "#008000", "#000080", "#808000", "#800080", "#008080", "#C0C0C0", "#FFE4E1", "#F0FFF0", "#F0F8FF", "#FFFACD", "#E0FFFF", "#FFDAB9", "#E6E6FA", "#FFF0F5", "#F5DEB3", "#FFF8DC", "#FAEBD7"),
+                                                title = "Page Color",
+                                                onColorSelected = { hex ->
+                                                    showShadingPicker = false
+                                                    try {
+                                                        val color = Color(android.graphics.Color.parseColor(hex))
+                                                        pageBackgroundColor = color
+                                                    } catch (e: Exception) {
+                                                        pageBackgroundColor = null
+                                                    }
+                                                    formatVersion++
+                                                },
+                                                onDismiss = { showShadingPicker = false }
                                             )
                                         }
                                     } else {
@@ -5010,9 +5566,87 @@ fun WorkspaceMenuBar(
 
 class RichTextVisualTransformation(private val spans: List<DocFormatSpan>, private val absoluteOffset: Int) : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
+        try {
+            return filterUnsafe(text)
+        } catch (e: Exception) {
+            android.util.Log.e("RichTextTransform", "filter error", e)
+            return TransformedText(text, OffsetMapping.Identity)
+        }
+    }
+    
+    private fun filterUnsafe(text: AnnotatedString): TransformedText {
         val builder = AnnotatedString.Builder(text.text)
         val chunkLength = text.text.length
+        val paraRangeList = mutableListOf<androidx.compose.ui.text.AnnotatedString.Range<androidx.compose.ui.text.ParagraphStyle>>()
         
+        // First pass: collect paragraph-level properties (alignment + lineSpacing) per paragraph range
+        val paraProps = mutableMapOf<String, MutableMap<String, String>>()
+        
+        spans.forEach { span ->
+            val relStart = maxOf(0, span.start - absoluteOffset)
+            val relEnd = minOf(chunkLength, span.end - absoluteOffset)
+            if (relStart < relEnd) {
+                when (span.type) {
+                    "alignment", "lineSpacing" -> {
+                        android.util.Log.d("AlignDebug", "RichTextTransform: type=${span.type}, span=[${span.start},${span.end}), value=${span.value}, absOff=$absoluteOffset, rel=[$relStart,$relEnd), textLen=$chunkLength")
+                        // Iterate through ALL paragraphs within the span's range,
+                        // not just the first one (spans can cover multiple paragraphs
+                        // when alignment is applied to non-first paragraphs).
+                        var paraCurrentPos = relStart
+                        while (paraCurrentPos < relEnd) {
+                            val paraStart = text.text.lastIndexOf('\n', maxOf(0, paraCurrentPos - 1)) + 1
+                            val nextNewline = text.text.indexOf('\n', paraCurrentPos)
+                            if (nextNewline == -1 || nextNewline >= relEnd) {
+                                // Last paragraph (or only paragraph) — extends to relEnd
+                                if (paraStart < relEnd) {
+                                    val key = "$paraStart-$relEnd"
+                                    paraProps.getOrPut(key) { mutableMapOf() }[span.type] = span.value
+                                    android.util.Log.d("AlignDebug", "RichTextTransform:   lastPara key=$key, type=${span.type}=${span.value}")
+                                }
+                                break
+                            }
+                            // Include trailing newline in the paragraph style range so Compose
+                            // doesn't create a gap (which can cause extra paragraph spacing)
+                            val paraEnd = nextNewline + 1
+                            if (paraStart < paraEnd) {
+                                val key = "$paraStart-$paraEnd"
+                                paraProps.getOrPut(key) { mutableMapOf() }[span.type] = span.value
+                                android.util.Log.d("AlignDebug", "RichTextTransform:   interPara key=$key, type=${span.type}=${span.value}")
+                            }
+                            paraCurrentPos = paraEnd
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Collect ParagraphStyle ranges
+        for ((key, props) in paraProps) {
+            val parts = key.split("-")
+            if (parts.size < 2) continue
+            val paraStart = parts[0].toIntOrNull() ?: continue
+            val paraEnd = parts[1].toIntOrNull() ?: continue
+            if (paraStart < 0 || paraEnd > chunkLength || paraStart >= paraEnd) continue
+            val align = when (props["alignment"]) {
+                "center" -> androidx.compose.ui.text.style.TextAlign.Center
+                "right" -> androidx.compose.ui.text.style.TextAlign.Right
+                "justify" -> androidx.compose.ui.text.style.TextAlign.Justify
+                "left" -> androidx.compose.ui.text.style.TextAlign.Left
+                else -> null
+            }
+            val lineHeightValue = props["lineSpacing"]?.toFloatOrNull()
+            if (align != null || lineHeightValue != null) {
+                val effectiveAlign = align ?: androidx.compose.ui.text.style.TextAlign.Start
+                val pStyle = if (lineHeightValue != null) {
+                    androidx.compose.ui.text.ParagraphStyle(textAlign = effectiveAlign, lineHeight = 24.sp * lineHeightValue)
+                } else {
+                    androidx.compose.ui.text.ParagraphStyle(textAlign = align!!)
+                }
+                paraRangeList.add(androidx.compose.ui.text.AnnotatedString.Range(pStyle, paraStart, paraEnd))
+            }
+        }
+        
+        // Second pass: apply span-level styles (non-paragraph types)
         spans.forEach { span ->
             val relStart = maxOf(0, span.start - absoluteOffset)
             val relEnd = minOf(chunkLength, span.end - absoluteOffset)
@@ -5052,10 +5686,26 @@ class RichTextVisualTransformation(private val spans: List<DocFormatSpan>, priva
                         }
                         builder.addStyle(SpanStyle(fontFamily = family), relStart, relEnd)
                     }
+                    "shading" -> {
+                        try {
+                            val bgColor = Color(android.graphics.Color.parseColor(span.value)).copy(alpha = 0.25f)
+                            builder.addStyle(SpanStyle(background = bgColor), relStart, relEnd)
+                        } catch (e: Exception) {}
+                    }
+                    "border" -> {
+                        // Border rendering requires custom drawing beyond VisualTransformation (e.g., Canvas/Border inside the composable). 
+                        // For now, we store the metadata — visual border drawing is deferred.
+                    }
                 }
             }
         }
-        return TransformedText(builder.toAnnotatedString(), OffsetMapping.Identity)
+        val base = builder.toAnnotatedString()
+        val result = androidx.compose.ui.text.AnnotatedString(
+            text = base.text,
+            spanStyles = base.spanStyles,
+            paragraphStyles = paraRangeList
+        )
+        return TransformedText(result, OffsetMapping.Identity)
     }
 }
 
@@ -5096,6 +5746,171 @@ fun formatPageNumber(pageNumber: Int, format: String): String {
     }
 }
 
+// --- PARAGRAPH FORMATTING HELPERS ---
+
+fun getParagraphRange(text: String, pos: Int): IntRange {
+    if (text.isEmpty()) return 0 until 0
+    val clampedPos = pos.coerceIn(0, text.length)
+    val start = text.lastIndexOf('\n', clampedPos - 1) + 1
+    val end = text.indexOf('\n', clampedPos).let { if (it == -1) text.length else it }
+    return start until end
+}
+
+fun getParagraphRangesInRange(text: String, rangeStart: Int, rangeEnd: Int): List<IntRange> {
+    if (text.isEmpty()) return emptyList()
+    val start = maxOf(0, rangeStart).coerceAtMost(text.length)
+    val end = rangeEnd.coerceIn(start, text.length)
+    // Single cursor: use the paragraph at that position
+    if (start == end) {
+        val para = getParagraphRange(text, start)
+        if (para.isEmpty()) return emptyList()
+        // Include trailing newline in the range
+        val nlPos = text.indexOf('\n', para.start)
+        val endWithNl = if (nlPos == -1 || nlPos >= para.endInclusive + 1) para.endInclusive + 1 else nlPos + 1
+        return listOf(para.start until endWithNl.coerceAtMost(text.length))
+    }
+    val result = mutableListOf<IntRange>()
+    val firstPara = getParagraphRange(text, start)
+    val startPos = firstPara.start
+    val clampedEnd = end.coerceAtMost(text.length)
+    val endPos = text.indexOf('\n', clampedEnd).let { if (it == -1) text.length else it }
+    var pos = startPos
+    while (pos < endPos) {
+        val paraStart = pos
+        val nextNewline = text.indexOf('\n', pos)
+        val paraEnd = if (nextNewline == -1 || nextNewline >= endPos) {
+            endPos
+        } else {
+            nextNewline + 1  // include trailing newline
+        }
+        if (paraStart < paraEnd) {
+            result.add(paraStart until paraEnd)
+        }
+        pos = if (nextNewline == -1 || nextNewline >= endPos) endPos else nextNewline + 1
+    }
+    return result
+}
+
+fun getParagraphText(text: String, pos: Int): String {
+    val range = getParagraphRange(text, pos)
+    return text.substring(range.start, range.endInclusive + 1)
+}
+
+fun replaceParagraphText(text: String, pos: Int, newPara: String): String {
+    val range = getParagraphRange(text, pos)
+    val sepEnd = text.indexOf('\n', range.start).let { if (it == -1) text.length else it + 1 }
+    return text.substring(0, range.start) + newPara + text.substring(sepEnd)
+}
+
+val BulletChars = listOf("•", "◦", "▪", "➢", "‣", "–", "★", "※")
+val NumberFormats = listOf("1.", "a)", "A.", "i)", "I.")
+
+fun detectListPrefix(line: String): Pair<String?, String?> {
+    val trimmed = line.trimStart()
+    for (b in BulletChars) {
+        if (trimmed.startsWith(b)) return b to null
+    }
+    for (f in NumberFormats) {
+        val pattern = when (f) {
+            "1." -> Regex("""^\d+\.""")
+            "a)" -> Regex("""^[a-z]\)""")
+            "A." -> Regex("""^[A-Z]\.""")
+            "i)" -> Regex("""^[ivxlcdm]+\)""", RegexOption.IGNORE_CASE)
+            "I." -> Regex("""^[IVXLCDM]+\.""")
+            else -> null
+        }
+        if (pattern != null && pattern.containsMatchIn(trimmed)) return null to f
+    }
+    return null to null
+}
+
+fun removeListPrefix(line: String): String {
+    val trimmed = line.trimStart()
+    for (b in BulletChars) {
+        if (trimmed.startsWith(b)) {
+            val after = trimmed.removePrefix(b).trimStart()
+            val wsLen = line.length - line.trimStart().length
+            return line.take(wsLen) + after
+        }
+    }
+    for (f in NumberFormats) {
+        val pattern = when (f) {
+            "1." -> Regex("""^\d+\.\s*""")
+            "a)" -> Regex("""^[a-z]\)\s*""")
+            "A." -> Regex("""^[A-Z]\.\s*""")
+            "i)" -> Regex("""^[ivxlcdm]+\)\s*""", RegexOption.IGNORE_CASE)
+            "I." -> Regex("""^[IVXLCDM]+\.\s*""")
+            else -> null
+        }
+        if (pattern != null) {
+            val after = trimmed.replaceFirst(pattern, "")
+            val wsLen = line.length - line.trimStart().length
+            return line.take(wsLen) + after
+        }
+    }
+    return line
+}
+
+fun applyBulletToPara(text: String, pos: Int, bulletChar: String): String {
+    val para = getParagraphText(text, pos)
+    val (existingBullet, _) = detectListPrefix(para)
+    if (existingBullet != null) return text // already has a bullet
+    val clean = removeListPrefix(para)
+    val indent = clean.takeWhile { it == ' ' }
+    val newPara = indent + bulletChar + " " + clean.trimStart()
+    return replaceParagraphText(text, pos, newPara)
+}
+
+fun removeBulletFromPara(text: String, pos: Int): String {
+    val para = getParagraphText(text, pos)
+    val clean = removeListPrefix(para)
+    return replaceParagraphText(text, pos, clean)
+}
+
+fun applyNumberToPara(text: String, pos: Int, numFormat: String, number: Int): String {
+    val para = getParagraphText(text, pos)
+    val clean = removeListPrefix(para)
+    val indent = clean.takeWhile { it == ' ' }
+    val prefix = when (numFormat) {
+        "1." -> "$number."
+        "a)" -> "${('a' + (number - 1).coerceIn(0, 25))})"
+        "A." -> "${('A' + (number - 1).coerceIn(0, 25))}."
+        "i)" -> toRoman(number).lowercase() + ")"
+        "I." -> toRoman(number) + "."
+        else -> "$number."
+    }
+    val newPara = indent + prefix + " " + clean.trimStart()
+    return replaceParagraphText(text, pos, newPara)
+}
+
+fun renumberDocument(text: String, numFormat: String): String {
+    val lines = text.split("\n")
+    var counter = 1
+    val result = lines.map { line ->
+        val (bullet, numFmt) = detectListPrefix(line)
+        if (numFmt != null) {
+            val clean = removeListPrefix(line)
+            val indent = line.takeWhile { it == ' ' }
+            val prefix = when (numFormat) {
+                "1." -> "$counter."
+                "a)" -> "${('a' + (counter - 1).coerceIn(0, 25))})"
+                "A." -> "${('A' + (counter - 1).coerceIn(0, 25))}."
+                "i)" -> toRoman(counter).lowercase() + ")"
+                "I." -> toRoman(counter) + "."
+                else -> "$counter."
+            }
+            counter++
+            indent + prefix + " " + clean.trimStart()
+        } else if (bullet != null) {
+            line // don't change counter for bullets
+        } else {
+            counter = 1 // reset counter for non-numbered paragraphs
+            line
+        }
+    }
+    return result.joinToString("\n")
+}
+
 // --- 1. JC WORD WRITER EDITOR ---
 @Composable
 fun WordDocumentEditor(
@@ -5104,9 +5919,9 @@ fun WordDocumentEditor(
     onContentChange: (String) -> Unit,
     editorTheme: String,
     onEditorThemeChange: (String) -> Unit,
+    pageBackgroundColor: Color? = null,
     pageMargins: androidx.compose.ui.unit.Dp,
     columnCount: Int,
-    textAlignment: androidx.compose.ui.text.style.TextAlign,
     fontSize: androidx.compose.ui.unit.TextUnit,
     formatVersion: Int = 0,
     isLandscape: Boolean,
@@ -5120,7 +5935,7 @@ fun WordDocumentEditor(
     onTextFieldValueChange: ((TextFieldValue) -> Unit)? = null,
     onFocusChanged: ((Boolean) -> Unit)? = null
 ) {
-    val paperColor = when (editorTheme) {
+    val paperColor = pageBackgroundColor ?: when (editorTheme) {
         "white" -> Color.White
         "ivory" -> Color(0xFFFAF6EE)
         "dark" -> Color(0xFF262626)
@@ -5213,7 +6028,7 @@ fun WordDocumentEditor(
                                             text = pageContent,
                                             color = paperTextColor,
                                             fontSize = fontSize,
-                                            textAlign = textAlignment,
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Start,
                                             modifier = Modifier.weight(1f)
                                         )
                                     }
@@ -5240,6 +6055,7 @@ fun WordDocumentEditor(
                                 
                                 LaunchedEffect(splitOffset) {
                                     val currentText = pageTextFieldValue.text
+                                    android.util.Log.d("AlignDebug", "LaunchedEffect(splitOffset): splitOff=$splitOffset, textLen=${currentText.length}, page=$pageIndex")
                                     if (splitOffset != -1 && splitOffset <= currentText.length) {
                                         val newPages = pages.toMutableList()
                                         
@@ -5326,6 +6142,7 @@ fun WordDocumentEditor(
                                 }
 
                                 LaunchedEffect(pageContent, targetFocusPage) {
+                                    android.util.Log.d("AlignDebug", "LaunchedEffect(pageContent): page=$pageIndex, pageContent=$pageContent, targetFocusPage=$targetFocusPage, targetOff=$targetFocusOffset, lastPushed=$lastPushedText")
                                     if (targetFocusPage == pageIndex && targetFocusOffset != null) {
                                         pageTextFieldValue = pageTextFieldValue.copy(
                                             text = pageContent,
@@ -5334,6 +6151,19 @@ fun WordDocumentEditor(
                                         lastPushedText = pageContent
                                         targetFocusOffset = null
                                     } else if (pageContent != lastPushedText) {
+                                        // Shift spans when text changes via external path (e.g. indent_inc/indent_dec)
+                                        val oldText = lastPushedText
+                                        val newText = pageContent
+                                        var cp = 0
+                                        while (cp < oldText.length && cp < newText.length && oldText[cp] == newText[cp]) { cp++ }
+                                        var cs = 0
+                                        while (cp + cs < oldText.length && cp + cs < newText.length && oldText[oldText.length - 1 - cs] == newText[newText.length - 1 - cs]) { cs++ }
+                                        val delLen = oldText.length - cp - cs
+                                        val insLen = newText.length - cp - cs
+                                        if (delLen > 0 || insLen > 0) {
+                                            val absOff = pages.take(pageIndex).sumOf { it.length + 1 }
+                                            DocFormatRepository.shiftSpans(docId, absOff + cp, delLen, insLen)
+                                        }
                                         val newSelection = if (pageTextFieldValue.selection.start <= pageContent.length && pageTextFieldValue.selection.end <= pageContent.length) {
                                             pageTextFieldValue.selection
                                         } else {
@@ -5385,11 +6215,14 @@ fun WordDocumentEditor(
                                         }
                                     },
                                     onTextLayout = { result: androidx.compose.ui.text.TextLayoutResult ->
+                                        android.util.Log.d("AlignDebug", "onTextLayout: page=$pageIndex, h=${result.size.height}, textFieldH=$textFieldHeightPx, splitOff=$splitOffset, mergeOff=$mergeBackOffset, mergeLocked=$mergeBackLocked, lineCount=${result.lineCount}")
                                         if (textFieldHeightPx > 0 && result.size.height > (textFieldHeightPx - 50)) {
                                             val availableHeight = (textFieldHeightPx - 50).toFloat()
                                             val line = (0 until result.lineCount).findLast { result.getLineBottom(it) <= availableHeight }
+                                            android.util.Log.d("AlignDebug", "onTextLayout: overflow detected, availableH=$availableHeight, foundLine=$line")
                                             if (line != null && line < result.lineCount - 1 && line > 0 && splitOffset == -1) {
                                                 val tentativeSplit = result.getLineEnd(line, visibleEnd = false)
+                                                android.util.Log.d("AlignDebug", "onTextLayout: setting splitOffset=$tentativeSplit (line=$line)")
                                                 if (tentativeSplit < pageTextFieldValue.text.length) {
                                                     splitOffset = tentativeSplit
                                                 } else {
@@ -5397,6 +6230,7 @@ fun WordDocumentEditor(
                                                 }
                                             } else if (line == 0 && splitOffset == -1 && result.lineCount > 1) {
                                                 val tentativeSplit = result.getLineEnd(0, visibleEnd = false)
+                                                android.util.Log.d("AlignDebug", "onTextLayout: setting splitOffset=$tentativeSplit (line=0)")
                                                 if (tentativeSplit < pageTextFieldValue.text.length) {
                                                     splitOffset = tentativeSplit
                                                 }
@@ -5405,7 +6239,9 @@ fun WordDocumentEditor(
                                         if (textFieldHeightPx > 0 && splitOffset == -1 && mergeBackOffset == -1 && !mergeBackLocked && pageIndex + 1 < pages.size && pages[pageIndex + 1].isNotEmpty() && result.lineCount > 0) {
                                             val usedHeight = result.getLineBottom(result.lineCount - 1)
                                             val availableHeight = (textFieldHeightPx - 50).toFloat()
+                                            android.util.Log.d("AlignDebug", "onTextLayout: check mergeBack, usedH=$usedHeight, availH=$availableHeight")
                                             if (usedHeight < availableHeight - 40) {
+                                                android.util.Log.d("AlignDebug", "onTextLayout: setting mergeBackOffset=1")
                                                 mergeBackOffset = 1
                                             }
                                         }
@@ -5413,9 +6249,8 @@ fun WordDocumentEditor(
                                     cursorBrush = androidx.compose.ui.graphics.SolidColor(paperTextColor),
                                     textStyle = MaterialTheme.typography.bodyLarge.copy(
                                         color = paperTextColor,
-                                        lineHeight = 24.sp,
-                                        textAlign = textAlignment,
-                                        fontSize = fontSize
+                                        fontSize = fontSize,
+                                        lineHeight = androidx.compose.ui.unit.TextUnit.Unspecified
                                     ),
                                     visualTransformation = remember(
                                         DocFormatRepository.getSpans(docId).toList(),
@@ -5470,11 +6305,9 @@ fun WordDocumentEditor(
                                         Box(modifier = Modifier.fillMaxSize()) {
                                             if (pageContent.isEmpty()) {
                                                 Text(
-                                                    "Start typing your new document here...", 
+                                                        "Start typing your new document here...", 
                                                     color = Color.Gray.copy(alpha = 0.7f),
                                                     style = MaterialTheme.typography.bodyLarge.copy(
-                                                        lineHeight = 24.sp,
-                                                        textAlign = textAlignment,
                                                         fontSize = fontSize
                                                     )
                                                 )

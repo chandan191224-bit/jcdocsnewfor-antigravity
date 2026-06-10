@@ -3,7 +3,6 @@ package com.example.ui
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
-import androidx.compose.ui.text.style.TextAlign
 import com.example.ui.DocFormatSpan
 
 data class DocEditorSnapshot(
@@ -14,7 +13,6 @@ data class DocEditorSnapshot(
     val editorTheme: String,
     val pageMargins: Dp,
     val columnCount: Int,
-    val textAlignment: TextAlign,
     val fontSize: TextUnit,
     val isLandscape: Boolean,
     val pageNumberPosition: String?,
@@ -49,7 +47,6 @@ class DocUndoRedoManager(private val docId: Int) {
                 last.title == state.title &&
                 last.pageMargins == state.pageMargins &&
                 last.columnCount == state.columnCount &&
-                last.textAlignment == state.textAlignment &&
                 last.fontSize == state.fontSize &&
                 last.editorTheme == state.editorTheme) {
                 return
