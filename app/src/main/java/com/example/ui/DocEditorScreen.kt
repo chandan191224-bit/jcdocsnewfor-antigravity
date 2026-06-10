@@ -2585,7 +2585,7 @@ fun WorkspacePane(
         val captureSnapshot = {
             DocEditorSnapshot(
                 title = draftTitle,
-                draftContent = draftContent,
+                draftContent = editorTextFieldValue.text,
                 textFieldValue = editorTextFieldValue,
                 spans = DocFormatRepository.getSpans(selectedDoc.id).toList(),
                 editorTheme = editorTheme,
@@ -4161,21 +4161,21 @@ fun WorkspacePane(
                                                             modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp),
                                                             textStyle = TextStyle(fontSize = 14.sp)
                                                         )
-                                                        Button(
-                                                            onClick = {
-                                                                val p = pageNum.toIntOrNull()
-                                                                if (p != null && p in 1..pages.size) {
-                                                                    var off = 0
-                                                                    for (i in 0 until p - 1) off += pages[i].length + 1
-                                                                    editorTextFieldValue = TextFieldValue(text = draftContent, selection = TextRange(off))
-                                                                    showGoToDialog = false
-                                                                }
-                                                            },
-                                                            enabled = pageNum.toIntOrNull()?.let { it in 1..pages.size } == true,
-                                                            modifier = Modifier.fillMaxWidth(),
-                                                            colors = ButtonDefaults.buttonColors(containerColor = if (selectedDoc.type == "word") DocWordColor else if (selectedDoc.type == "sheet") DocSheetColor else DocSlideColor)
-                                                        ) { Text("Go To") }
                                                     }
+                                                },
+                                                confirmButton = {
+                                                    TextButton(
+                                                        onClick = {
+                                                            val p = pageNum.toIntOrNull()
+                                                            if (p != null && p in 1..pages.size) {
+                                                                var off = 0
+                                                                for (i in 0 until p - 1) off += pages[i].length + 1
+                                                                editorTextFieldValue = TextFieldValue(text = draftContent, selection = TextRange(off))
+                                                                showGoToDialog = false
+                                                            }
+                                                        },
+                                                        enabled = pageNum.toIntOrNull()?.let { it in 1..pages.size } == true
+                                                    ) { Text("Go To") }
                                                 },
                                                 dismissButton = { TextButton(onClick = { showGoToDialog = false }) { Text("Cancel") } }
                                             )
