@@ -3223,98 +3223,54 @@ fun WorkspacePane(
                                                     onToggleExpand = { isParagraphExpanded = !isParagraphExpanded },
                                                     accentColor = if (selectedDoc.type == "word") DocWordColor else if (selectedDoc.type == "sheet") DocSheetColor else DocSlideColor
                                                 ) {
-                                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                                         val btnBg = if (isSystemInDarkTheme()) Color(0xFF323236) else Color(0xFFF1F3F6)
                                                         val accent = if (selectedDoc.type == "word") DocWordColor else if (selectedDoc.type == "sheet") DocSheetColor else DocSlideColor
                                                         val textColor = if (isSystemInDarkTheme()) Color.White else Color.Black
+                                                        val sectionLabelColor = if (isSystemInDarkTheme()) Color(0xFF9A9A9A) else Color(0xFF777777)
+                                                        val dividerColor = if (isSystemInDarkTheme()) Color(0xFF3A3A3C) else Color(0xFFE0E0E0)
 
-                                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                            Box(modifier = Modifier.weight(1f).height(72.dp).clip(RoundedCornerShape(8.dp)).background(btnBg).clickable { onAction("bullets") }, contentAlignment = Alignment.Center) {
+                                                        @Composable
+                                                        fun ParaCard(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, action: String) {
+                                                            Box(modifier = Modifier.weight(1f).height(68.dp).clip(RoundedCornerShape(8.dp)).background(btnBg).clickable { onAction(action) }, contentAlignment = Alignment.Center) {
                                                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                    Icon(Icons.Default.FormatListBulleted, contentDescription = "Bullets", tint = accent, modifier = Modifier.size(20.dp))
+                                                                    Icon(icon, contentDescription = label, tint = accent, modifier = Modifier.size(20.dp))
                                                                     Spacer(Modifier.height(2.dp))
-                                                                    Text("Bullets", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                                }
-                                                            }
-                                                            Box(modifier = Modifier.weight(1f).height(72.dp).clip(RoundedCornerShape(8.dp)).background(btnBg).clickable { onAction("numbers") }, contentAlignment = Alignment.Center) {
-                                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                    Icon(Icons.Default.FormatListNumbered, contentDescription = "Numbers", tint = accent, modifier = Modifier.size(20.dp))
-                                                                    Spacer(Modifier.height(2.dp))
-                                                                    Text("Numbers", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                                }
-                                                            }
-                                                            Box(modifier = Modifier.weight(1f).height(72.dp).clip(RoundedCornerShape(8.dp)).background(btnBg).clickable { onAction("multilevel") }, contentAlignment = Alignment.Center) {
-                                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                    Icon(Icons.Outlined.Menu, contentDescription = "Multilevel", tint = accent, modifier = Modifier.size(20.dp))
-                                                                    Spacer(Modifier.height(2.dp))
-                                                                    Text("Multilevel", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                                }
-                                                            }
-                                                            Box(modifier = Modifier.weight(1f).height(72.dp).clip(RoundedCornerShape(8.dp)).background(btnBg).clickable { onAction("indent_dec") }, contentAlignment = Alignment.Center) {
-                                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                    Icon(Icons.Default.FormatIndentDecrease, contentDescription = "Dec Indent", tint = accent, modifier = Modifier.size(20.dp))
-                                                                    Spacer(Modifier.height(2.dp))
-                                                                    Text("Dec", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                                }
-                                                            }
-                                                            Box(modifier = Modifier.weight(1f).height(72.dp).clip(RoundedCornerShape(8.dp)).background(btnBg).clickable { onAction("indent_inc") }, contentAlignment = Alignment.Center) {
-                                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                    Icon(Icons.Default.FormatIndentIncrease, contentDescription = "Inc Indent", tint = accent, modifier = Modifier.size(20.dp))
-                                                                    Spacer(Modifier.height(2.dp))
-                                                                    Text("Inc", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                                }
-                                                            }
-                                                            Box(modifier = Modifier.weight(1f).height(72.dp).clip(RoundedCornerShape(8.dp)).background(btnBg).clickable { onAction("line_spacing") }, contentAlignment = Alignment.Center) {
-                                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                    Icon(Icons.Outlined.ImportExport, contentDescription = "Line Spacing", tint = accent, modifier = Modifier.size(20.dp))
-                                                                    Spacer(Modifier.height(2.dp))
-                                                                    Text("Spacing", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                                    Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                                                 }
                                                             }
                                                         }
+
+                                                        // --- LIST GROUP ---
+                                                        Text("List", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = sectionLabelColor, modifier = Modifier.padding(start = 2.dp))
                                                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                            Box(modifier = Modifier.weight(1f).height(72.dp).clip(RoundedCornerShape(8.dp)).background(btnBg).clickable { onAction("align_left") }, contentAlignment = Alignment.Center) {
-                                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                    Icon(Icons.Default.FormatAlignLeft, contentDescription = "Align Left", tint = accent, modifier = Modifier.size(20.dp))
-                                                                    Spacer(Modifier.height(2.dp))
-                                                                    Text("Left", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                                }
-                                                            }
-                                                            Box(modifier = Modifier.weight(1f).height(72.dp).clip(RoundedCornerShape(8.dp)).background(btnBg).clickable { onAction("align_center") }, contentAlignment = Alignment.Center) {
-                                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                    Icon(Icons.Outlined.FormatAlignCenter, contentDescription = "Center", tint = accent, modifier = Modifier.size(20.dp))
-                                                                    Spacer(Modifier.height(2.dp))
-                                                                    Text("Center", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                                }
-                                                            }
-                                                            Box(modifier = Modifier.weight(1f).height(72.dp).clip(RoundedCornerShape(8.dp)).background(btnBg).clickable { onAction("align_right") }, contentAlignment = Alignment.Center) {
-                                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                    Icon(Icons.Default.FormatAlignRight, contentDescription = "Align Right", tint = accent, modifier = Modifier.size(20.dp))
-                                                                    Spacer(Modifier.height(2.dp))
-                                                                    Text("Right", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                                }
-                                                            }
-                                                            Box(modifier = Modifier.weight(1f).height(72.dp).clip(RoundedCornerShape(8.dp)).background(btnBg).clickable { onAction("align_justify") }, contentAlignment = Alignment.Center) {
-                                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                    Icon(Icons.Outlined.FormatAlignJustify, contentDescription = "Justify", tint = accent, modifier = Modifier.size(20.dp))
-                                                                    Spacer(Modifier.height(2.dp))
-                                                                    Text("Justify", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                                }
-                                                            }
-                                                            Box(modifier = Modifier.weight(1f).height(72.dp).clip(RoundedCornerShape(8.dp)).background(btnBg).clickable { onAction("shading") }, contentAlignment = Alignment.Center) {
-                                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                    Icon(Icons.Outlined.FormatColorFill, contentDescription = "Shading", tint = accent, modifier = Modifier.size(20.dp))
-                                                                    Spacer(Modifier.height(2.dp))
-                                                                    Text("Shading", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                                }
-                                                            }
-                                                            Box(modifier = Modifier.weight(1f).height(72.dp).clip(RoundedCornerShape(8.dp)).background(btnBg).clickable { onAction("borders") }, contentAlignment = Alignment.Center) {
-                                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                    Icon(Icons.Outlined.BorderAll, contentDescription = "Borders", tint = accent, modifier = Modifier.size(20.dp))
-                                                                    Spacer(Modifier.height(2.dp))
-                                                                    Text("Borders", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                                }
-                                                            }
+                                                            ParaCard(Icons.Default.FormatListBulleted, "Bullets", "bullets")
+                                                            ParaCard(Icons.Default.FormatListNumbered, "Numbers", "numbers")
+                                                            ParaCard(Icons.Outlined.Menu, "Multilevel", "multilevel")
+                                                        }
+
+                                                        // --- INDENT & SPACING GROUP ---
+                                                        Text("Indent & Spacing", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = sectionLabelColor, modifier = Modifier.padding(start = 2.dp))
+                                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                            ParaCard(Icons.Default.FormatIndentDecrease, "Dec", "indent_dec")
+                                                            ParaCard(Icons.Default.FormatIndentIncrease, "Inc", "indent_inc")
+                                                            ParaCard(Icons.Outlined.ImportExport, "Spacing", "line_spacing")
+                                                        }
+
+                                                        // --- ALIGNMENT GROUP ---
+                                                        Text("Alignment", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = sectionLabelColor, modifier = Modifier.padding(start = 2.dp))
+                                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                            ParaCard(Icons.Default.FormatAlignLeft, "Left", "align_left")
+                                                            ParaCard(Icons.Outlined.FormatAlignCenter, "Center", "align_center")
+                                                            ParaCard(Icons.Default.FormatAlignRight, "Right", "align_right")
+                                                            ParaCard(Icons.Outlined.FormatAlignJustify, "Justify", "align_justify")
+                                                        }
+
+                                                        // --- FILL GROUP ---
+                                                        Text("Fill & Borders", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = sectionLabelColor, modifier = Modifier.padding(start = 2.dp))
+                                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                            ParaCard(Icons.Outlined.FormatColorFill, "Shading", "shading")
+                                                            ParaCard(Icons.Outlined.BorderAll, "Borders", "borders")
                                                         }
                                                     }
                                                 }
