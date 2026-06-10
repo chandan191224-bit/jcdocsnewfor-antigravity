@@ -5229,6 +5229,7 @@ fun WordDocumentEditor(
                                         )
                                         lastPushedText = keptContent
                                         onTextFieldValueChange?.invoke(TextFieldValue(text = newFullText))
+                                        mergeBackLocked = true
                                         splitOffset = -1
                                     }
                                 }
@@ -5340,7 +5341,8 @@ fun WordDocumentEditor(
                                                     splitOffset = tentativeSplit
                                                 }
                                             }
-                                        } else if (textFieldHeightPx > 0 && splitOffset == -1 && mergeBackOffset == -1 && !mergeBackLocked && pageIndex + 1 < pages.size && pages[pageIndex + 1].isNotEmpty() && result.lineCount > 0) {
+                                        }
+                                        if (textFieldHeightPx > 0 && splitOffset == -1 && mergeBackOffset == -1 && !mergeBackLocked && pageIndex + 1 < pages.size && pages[pageIndex + 1].isNotEmpty() && result.lineCount > 0) {
                                             val usedHeight = result.getLineBottom(result.lineCount - 1)
                                             val availableHeight = (textFieldHeightPx - 50).toFloat()
                                             if (usedHeight < availableHeight - 40) {

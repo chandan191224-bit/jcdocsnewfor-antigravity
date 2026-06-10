@@ -66,3 +66,12 @@ When content overflowed to the next page and the user then shortened text on the
 **Fix**: Added `mergeBackOffset` state + `LaunchedEffect(mergeBackOffset)` in `WordDocumentEditor`. In `onTextLayout`, when the current page has >40px of unused space AND the next page has content, `mergeBackOffset` is set, triggering a merge of all content from page N+1 back into page N. Spans are adjusted via `DocFormatRepository.moveSpanRange()`. If the merged content is too long, the standard split mechanism re-splits it.
 
 **Oscillation guard**: Added `mergeBackLocked` flag set after each merge-back and cleared on user text edit, preventing infinite merge↔split cycles when content is right at the page boundary.
+
+### Follow-up — Split now also locks merge-back
+The oscillation guard only locked merge-back AFTER a merge-back, not after a SPLIT:
+1. User types → content overflows → **split** creates new page
+2. `mergeBackLocked` stays `false` (split never set it)
+3. Recomposition: page 1 has free space → merge-back immediately fires, pulling content back
+4. If merged content overflows → split fires again → **oscillation**: no new page persists, content appears "stuck"
+
+**Fix** (`DocEditorScreen.kt:5232`): Added `mergeBackLocked = true` at the end of the split `LaunchedEffect`, mirroring the merge-back LaunchedEffect. Merge-back now requires explicit user edit before it can fire again after a split.
