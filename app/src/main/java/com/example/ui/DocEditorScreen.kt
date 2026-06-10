@@ -2696,6 +2696,9 @@ fun WorkspacePane(
         var activeFontFamily by remember { mutableStateOf("Default") }
         var activeFontSize by remember { mutableStateOf("16") }
         var showPasteSpecialDialog by remember { mutableStateOf(false) }
+        var pendingPasteSelStart by remember { mutableIntStateOf(0) }
+        var pendingPasteSelEnd by remember { mutableIntStateOf(0) }
+        var pendingPasteText by remember { mutableStateOf("") }
         var showFontColorPicker by remember { mutableStateOf(false) }
         var showHighlightPicker by remember { mutableStateOf(false) }
 
@@ -3678,7 +3681,14 @@ fun WorkspacePane(
                                                                 Text("Copy", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = textColor)
                                                             }
                                                         }
-                                                        Box(modifier = Modifier.weight(1f).height(84.dp).clip(RoundedCornerShape(8.dp)).background(btnBg).clickable { showPasteSpecialDialog = true }, contentAlignment = Alignment.Center) {
+                                                        Box(modifier = Modifier.weight(1f).height(84.dp).clip(RoundedCornerShape(8.dp)).background(btnBg).clickable {
+                                                            val sel = editorTextFieldValue.selection
+                                                            pendingPasteSelStart = minOf(sel.start, sel.end)
+                                                            pendingPasteSelEnd = maxOf(sel.start, sel.end)
+                                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                            pendingPasteText = clipboard.primaryClip?.getItemAt(0)?.text?.toString() ?: ""
+                                                            showPasteSpecialDialog = true
+                                                        }, contentAlignment = Alignment.Center) {
                                                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                                                 Icon(Icons.Outlined.ContentPaste, contentDescription = "Paste", tint = accent, modifier = Modifier.size(22.dp))
                                                                 Spacer(Modifier.height(4.dp))
@@ -4498,58 +4508,75 @@ fun WorkspacePane(
                     }
                 )
             }
-            if (showPasteSpecialDialog) {
-                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                val clip = clipboard.primaryClip
-                val clipText = clip?.getItemAt(0)?.text?.toString() ?: ""
-                AlertDialog(
-                    onDismissRequest = { showPasteSpecialDialog = false },
-                    title = { Text("Paste Special", fontWeight = FontWeight.Bold) },
-                    text = {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Choose paste format:", fontSize = 13.sp, color = Color.Gray)
-                            Text("“${clipText.take(50)}${if (clipText.length > 50) "..." else ""}”", fontSize = 12.sp, color = if (isSystemInDarkTheme()) Color.White else Color.Black, maxLines = 2)
-                        }
-                    },
-                    confirmButton = {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TextButton(
-                                onClick = {
-                                    val sel = editorTextFieldValue.selection
-                                    val start = minOf(sel.start, sel.end)
-                                    val end = maxOf(sel.start, sel.end)
-                                    val newText = draftContent.substring(0, start) + clipText + draftContent.substring(end)
-                                    onContentChange(newText)
-                                    val newCursor = start + clipText.length
-                                    editorTextFieldValue = TextFieldValue(text = newText, selection = TextRange(newCursor))
-                                    showPasteSpecialDialog = false
-                                }
-                            ) { Text("Text") }
-                            TextButton(
-                                onClick = {
-                                    val sel = editorTextFieldValue.selection
-                                    val start = minOf(sel.start, sel.end)
-                                    val end = maxOf(sel.start, sel.end)
-                                    val newText = draftContent.substring(0, start) + clipText + draftContent.substring(end)
-                                    onContentChange(newText)
-                                    val newCursor = start + clipText.length
-                                    editorTextFieldValue = TextFieldValue(text = newText, selection = TextRange(newCursor))
-                                    val data = copiedFormattedData
-                                    if (data != null && data.text == clipText) {
-                                        for (span in data.spans) {
-                                            DocFormatRepository.applySpan(selectedDoc.id, span.type, span.value, start + span.start, start + span.end)
-                                        }
-                                        formatVersion++
+            if (showPasteSpecialDialog && pendingPasteText.isNotEmpty()) {
+                val clipText = pendingPasteText
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                    Card(
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isSystemInDarkTheme()) Color(0xFF2B2B30) else Color.White
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                        modifier = Modifier.padding(top = 120.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("Paste as:", fontSize = 10.sp, color = Color.Gray)
+                            Spacer(Modifier.height(4.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(if (isSystemInDarkTheme()) Color(0xFF3A3A40) else Color(0xFFE8EAED))
+                                            .clickable {
+                                                val start = pendingPasteSelStart
+                                                val end = pendingPasteSelEnd
+                                                val newText = draftContent.substring(0, start) + clipText + draftContent.substring(end)
+                                                onContentChange(newText)
+                                                editorTextFieldValue = TextFieldValue(text = newText, selection = TextRange(start + clipText.length))
+                                                showPasteSpecialDialog = false
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text("Tt", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (isSystemInDarkTheme()) Color.White else Color.Black)
                                     }
-                                    showPasteSpecialDialog = false
+                                    Text("Text", fontSize = 8.sp, color = Color.Gray)
                                 }
-                            ) { Text("Source Formatting") }
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(if (isSystemInDarkTheme()) Color(0xFF3A3A40) else Color(0xFFE8EAED))
+                                            .clickable {
+                                                val start = pendingPasteSelStart
+                                                val end = pendingPasteSelEnd
+                                                val newText = draftContent.substring(0, start) + clipText + draftContent.substring(end)
+                                                onContentChange(newText)
+                                                editorTextFieldValue = TextFieldValue(text = newText, selection = TextRange(start + clipText.length))
+                                                val data = copiedFormattedData
+                                                if (data != null && data.text == clipText) {
+                                                    for (span in data.spans) {
+                                                        DocFormatRepository.applySpan(selectedDoc.id, span.type, span.value, start + span.start, start + span.end)
+                                                    }
+                                                    formatVersion++
+                                                }
+                                                showPasteSpecialDialog = false
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(Icons.Outlined.FormatBold, contentDescription = "Formatting", tint = if (isSystemInDarkTheme()) Color.White else Color.Black, modifier = Modifier.size(18.dp))
+                                    }
+                                    Text("Format", fontSize = 8.sp, color = Color.Gray)
+                                }
+                            }
                         }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showPasteSpecialDialog = false }) { Text("Cancel") }
                     }
-                )
+                }
             }
 
             if (showClipboardHistory) {
@@ -5157,54 +5184,49 @@ fun EmptyWorkspaceState(
                 }
             }
 
-            // --- 4. Material 3 Bottom Navigation bar (Placed exactly matching HTML) ---
-            Box(
+            // --- 4. Material 3 Bottom Navigation bar ---
+            NavigationBar(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                containerColor = Color(0xFFF3F4F9),
+                tonalElevation = 4.dp
             ) {
-                Card(
-                    shape = RoundedCornerShape(32.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF3F4F9)),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 10.dp, horizontal = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        BottomNavItem(
-                            icon = Icons.Outlined.Home,
-                            label = "Home",
-                            isSelected = activeTab == "home",
-                            onClick = { activeTab = "home" },
-                            modifier = Modifier.weight(1f)
+                val items = listOf(
+                    Triple(Icons.Outlined.Home, "Home", "home"),
+                    Triple(Icons.Outlined.FolderOpen, "Files", "files"),
+                    Triple(Icons.Outlined.People, "Shared", "shared"),
+                    Triple(Icons.Outlined.Tune, "Settings", "settings")
+                )
+                items.forEach { (icon, label, tabId) ->
+                    val selected = activeTab == tabId
+                    NavigationBarItem(
+                        selected = selected,
+                        onClick = { activeTab = tabId },
+                        icon = {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = label,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        },
+                        label = {
+                            Text(
+                                text = label,
+                                fontSize = 12.sp,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                maxLines = 1
+                            )
+                        },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Color(0xFF001D36),
+                            selectedTextColor = Color(0xFF001D36),
+                            unselectedIconColor = Color(0xFF44474E).copy(alpha = 0.7f),
+                            unselectedTextColor = Color(0xFF44474E).copy(alpha = 0.7f),
+                            indicatorColor = Color(0xFFD9E2FF)
                         )
-                        BottomNavItem(
-                            icon = Icons.Outlined.Search,
-                            label = "Files",
-                            isSelected = activeTab == "files",
-                            onClick = { activeTab = "files" },
-                            modifier = Modifier.weight(1f)
-                        )
-                        BottomNavItem(
-                            icon = Icons.Outlined.Share,
-                            label = "Shared",
-                            isSelected = activeTab == "shared",
-                            onClick = { activeTab = "shared" },
-                            modifier = Modifier.weight(1f)
-                        )
-                        BottomNavItem(
-                            icon = Icons.Outlined.Settings,
-                            label = "Settings",
-                            isSelected = activeTab == "settings",
-                            onClick = { activeTab = "settings" },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
+                    )
                 }
             }
 
@@ -5232,50 +5254,6 @@ fun EmptyWorkspaceState(
                 }
             }
         }
-    }
-}
-
-@Composable
-fun BottomNavItem(
-    icon: ImageVector,
-    label: String,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .clickable { onClick() }
-            .padding(vertical = 6.dp)
-            .wrapContentSize(Alignment.Center)
-    ) {
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(100.dp))
-                .background(if (isSelected) Color(0xFFD9E2FF) else Color.Transparent)
-                .padding(horizontal = 12.dp, vertical = 4.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = if (isSelected) Color(0xFF001D36) else Color(0xFF44474E).copy(alpha = 0.7f),
-                modifier = Modifier.size(22.dp)
-            )
-        }
-        Spacer(modifier = Modifier.height(2.dp))
-        Text(
-            text = label,
-            fontSize = 11.sp,
-            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-            color = if (isSelected) Color(0xFF001D36) else Color(0xFF44474E),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
     }
 }
 
