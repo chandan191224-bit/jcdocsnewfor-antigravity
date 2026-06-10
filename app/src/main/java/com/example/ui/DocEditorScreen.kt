@@ -1256,8 +1256,6 @@ fun executeRibbonAction(
                             DocFormatRepository.applySpan(selectedDoc.id, "alignment", "left", r.start, paraEnd)
                         }
                     }
-                    val spansAfter = DocFormatRepository.getSpans(selectedDoc.id).toList()
-                    android.util.Log.d("AlignDebug", "align_left: spansAfter=${spansAfter.map { "${it.type}[${it.start},${it.end}):${it.value}" }}")
                     onFormatVersionChange(formatVersion + 1)
                     showToast(if (allMatch) "Alignment removed" else "Text alignment set to Left")
                 } catch (e: Exception) {
@@ -1272,9 +1270,6 @@ fun executeRibbonAction(
                     val selStart = textFieldValue.selection.start
                     val selEnd = textFieldValue.selection.end
                     val paraRanges = getParagraphRangesInRange(draftContent, selStart, selEnd)
-                    android.util.Log.d("AlignDebug", "align_center: draftContent='${draftContent.take(50)}', sel=$selStart-$selEnd, paraRanges=$paraRanges")
-                    val spansBefore = DocFormatRepository.getSpans(selectedDoc.id).toList()
-                    android.util.Log.d("AlignDebug", "align_center: spansBefore=${spansBefore.map { "${it.type}[${it.start},${it.end}):${it.value}" }}")
                     val allMatch = paraRanges.all { r -> DocFormatRepository.getSpans(selectedDoc.id).any { it.type == "alignment" && it.start <= r.start && it.end > r.start && it.value == "center" } }
                     for (r in paraRanges) {
                         val paraEnd = r.endInclusive + 1
@@ -1283,8 +1278,6 @@ fun executeRibbonAction(
                             DocFormatRepository.applySpan(selectedDoc.id, "alignment", "center", r.start, paraEnd)
                         }
                     }
-                    val spansAfter = DocFormatRepository.getSpans(selectedDoc.id).toList()
-                    android.util.Log.d("AlignDebug", "align_center: spansAfter=${spansAfter.map { "${it.type}[${it.start},${it.end}):${it.value}" }}")
                     onFormatVersionChange(formatVersion + 1)
                     showToast(if (allMatch) "Alignment removed" else "Text alignment set to Center")
                 } catch (e: Exception) {
@@ -1307,8 +1300,6 @@ fun executeRibbonAction(
                             DocFormatRepository.applySpan(selectedDoc.id, "alignment", "right", r.start, paraEnd)
                         }
                     }
-                    val spansAfter = DocFormatRepository.getSpans(selectedDoc.id).toList()
-                    android.util.Log.d("AlignDebug", "align_right: spansAfter=${spansAfter.map { "${it.type}[${it.start},${it.end}):${it.value}" }}")
                     onFormatVersionChange(formatVersion + 1)
                     showToast(if (allMatch) "Alignment removed" else "Text alignment set to Right")
                 } catch (e: Exception) {
@@ -1331,8 +1322,6 @@ fun executeRibbonAction(
                             DocFormatRepository.applySpan(selectedDoc.id, "alignment", "justify", r.start, paraEnd)
                         }
                     }
-                    val spansAfter = DocFormatRepository.getSpans(selectedDoc.id).toList()
-                    android.util.Log.d("AlignDebug", "align_justify: spansAfter=${spansAfter.map { "${it.type}[${it.start},${it.end}):${it.value}" }}")
                     onFormatVersionChange(formatVersion + 1)
                     showToast(if (allMatch) "Alignment removed" else "Text alignment set to Justified")
                 } catch (e: Exception) {
@@ -5588,7 +5577,6 @@ class RichTextVisualTransformation(private val spans: List<DocFormatSpan>, priva
             if (relStart < relEnd) {
                 when (span.type) {
                     "alignment", "lineSpacing" -> {
-                        android.util.Log.d("AlignDebug", "RichTextTransform: type=${span.type}, span=[${span.start},${span.end}), value=${span.value}, absOff=$absoluteOffset, rel=[$relStart,$relEnd), textLen=$chunkLength")
                         val paraRangesInPage = getParagraphRangesInRange(text.text, relStart, relEnd.coerceAtLeast(relStart))
                         for (r in paraRangesInPage) {
                             val paraStart = r.start
@@ -5596,9 +5584,6 @@ class RichTextVisualTransformation(private val spans: List<DocFormatSpan>, priva
                             if (paraStart >= 0 && paraEnd <= chunkLength && paraStart < paraEnd) {
                                 val key = "$paraStart-$paraEnd"
                                 paraProps.getOrPut(key) { mutableMapOf() }[span.type] = span.value
-                                android.util.Log.d("AlignDebug", "RichTextTransform:   paraRange key=$key, type=${span.type}=${span.value}")
-                            } else {
-                                android.util.Log.e("AlignDebug", "RichTextTransform:   INVALID paraRange=[$paraStart,$paraEnd)")
                             }
                         }
                     }
@@ -6041,7 +6026,6 @@ fun WordDocumentEditor(
                                 
                                 LaunchedEffect(splitOffset) {
                                     val currentText = pageTextFieldValue.text
-                                    android.util.Log.d("AlignDebug", "LaunchedEffect(splitOffset): splitOff=$splitOffset, textLen=${currentText.length}, page=$pageIndex")
                                     if (splitOffset != -1 && splitOffset <= currentText.length) {
                                         val newPages = pages.toMutableList()
                                         
@@ -6128,7 +6112,6 @@ fun WordDocumentEditor(
                                 }
 
                                 LaunchedEffect(pageContent, targetFocusPage) {
-                                    android.util.Log.d("AlignDebug", "LaunchedEffect(pageContent): page=$pageIndex, pageContent=$pageContent, targetFocusPage=$targetFocusPage, targetOff=$targetFocusOffset, lastPushed=$lastPushedText")
                                     if (targetFocusPage == pageIndex && targetFocusOffset != null) {
                                         pageTextFieldValue = pageTextFieldValue.copy(
                                             text = pageContent,
@@ -6201,14 +6184,11 @@ fun WordDocumentEditor(
                                         }
                                     },
                                     onTextLayout = { result: androidx.compose.ui.text.TextLayoutResult ->
-                                        android.util.Log.d("AlignDebug", "onTextLayout: page=$pageIndex, h=${result.size.height}, textFieldH=$textFieldHeightPx, splitOff=$splitOffset, mergeOff=$mergeBackOffset, mergeLocked=$mergeBackLocked, lineCount=${result.lineCount}")
                                         if (textFieldHeightPx > 0 && result.size.height > (textFieldHeightPx - 50)) {
                                             val availableHeight = (textFieldHeightPx - 50).toFloat()
                                             val line = (0 until result.lineCount).findLast { result.getLineBottom(it) <= availableHeight }
-                                            android.util.Log.d("AlignDebug", "onTextLayout: overflow detected, availableH=$availableHeight, foundLine=$line")
                                             if (line != null && line < result.lineCount - 1 && line > 0 && splitOffset == -1) {
                                                 val tentativeSplit = result.getLineEnd(line, visibleEnd = false)
-                                                android.util.Log.d("AlignDebug", "onTextLayout: setting splitOffset=$tentativeSplit (line=$line)")
                                                 if (tentativeSplit < pageTextFieldValue.text.length) {
                                                     splitOffset = tentativeSplit
                                                 } else {
@@ -6216,7 +6196,6 @@ fun WordDocumentEditor(
                                                 }
                                             } else if (line == 0 && splitOffset == -1 && result.lineCount > 1) {
                                                 val tentativeSplit = result.getLineEnd(0, visibleEnd = false)
-                                                android.util.Log.d("AlignDebug", "onTextLayout: setting splitOffset=$tentativeSplit (line=0)")
                                                 if (tentativeSplit < pageTextFieldValue.text.length) {
                                                     splitOffset = tentativeSplit
                                                 }
@@ -6225,9 +6204,7 @@ fun WordDocumentEditor(
                                         if (textFieldHeightPx > 0 && splitOffset == -1 && mergeBackOffset == -1 && !mergeBackLocked && pageIndex + 1 < pages.size && pages[pageIndex + 1].isNotEmpty() && result.lineCount > 0) {
                                             val usedHeight = result.getLineBottom(result.lineCount - 1)
                                             val availableHeight = (textFieldHeightPx - 50).toFloat()
-                                            android.util.Log.d("AlignDebug", "onTextLayout: check mergeBack, usedH=$usedHeight, availH=$availableHeight")
                                             if (usedHeight < availableHeight - 40) {
-                                                android.util.Log.d("AlignDebug", "onTextLayout: setting mergeBackOffset=1")
                                                 mergeBackOffset = 1
                                             }
                                         }
