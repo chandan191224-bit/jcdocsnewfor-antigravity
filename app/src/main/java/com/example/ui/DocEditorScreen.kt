@@ -1,5 +1,8 @@
 package com.example.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
@@ -1095,6 +1098,7 @@ fun getRibbonTools(
 
 fun executeRibbonAction(
     actionId: String,
+    context: Context,
     draftContent: String,
     onContentChange: (String) -> Unit,
     selectedDoc: DocEntity,
@@ -1120,9 +1124,11 @@ fun executeRibbonAction(
     onTextFieldValueChange: ((TextFieldValue) -> Unit)? = null,
     lastSelection: TextRange? = null,
     formatVersion: Int = 0,
-    onFormatVersionChange: (Int) -> Unit = {}
+    onFormatVersionChange: (Int) -> Unit = {},
+    onHistoryAdd: ((String) -> Unit)? = null
 ) {
     fun showToast(msg: String) {
+        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
     }
 
     val applyFormatting = { type: String, value: String, debugName: String ->
@@ -1152,20 +1158,70 @@ fun executeRibbonAction(
         "highlight" -> applyFormatting("highlight", "", "Highlight")
         "copy" -> {
             if (textFieldValue != null && !textFieldValue.selection.collapsed) {
-                showToast("Text copied to clipboard")
+                val sel = textFieldValue.selection
+                val start = minOf(sel.start, sel.end)
+                val end = maxOf(sel.start, sel.end)
+                val selectedText = draftContent.substring(start, end)
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                val clip = ClipData.newPlainText("JCdocs", selectedText)
+                clipboard.setPrimaryClip(clip)
+                onHistoryAdd?.invoke(selectedText)
+                showToast("Copied to clipboard")
             } else {
                 showToast("Select text to copy")
             }
         }
         "cut" -> {
             if (textFieldValue != null && !textFieldValue.selection.collapsed) {
-                showToast("Text cut to clipboard")
+                val sel = textFieldValue.selection
+                val start = minOf(sel.start, sel.end)
+                val end = maxOf(sel.start, sel.end)
+                val selectedText = draftContent.substring(start, end)
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                val clip = ClipData.newPlainText("JCdocs", selectedText)
+                clipboard.setPrimaryClip(clip)
+                onHistoryAdd?.invoke(selectedText)
+                val newText = draftContent.substring(0, start) + draftContent.substring(end)
+                onContentChange(newText)
+                onTextFieldValueChange?.invoke(TextFieldValue(text = newText, selection = TextRange(start)))
+                showToast("Cut to clipboard")
             } else {
                 showToast("Select text to cut")
             }
         }
         "paste" -> {
-            showToast("Paste functionality requires clipboard manager")
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val clip = clipboard.primaryClip
+            if (clip != null && clip.itemCount > 0) {
+                val pastedText = clip.getItemAt(0).text?.toString() ?: return
+                val sel = textFieldValue?.selection ?: TextRange(draftContent.length)
+                val start = minOf(sel.start, sel.end)
+                val end = maxOf(sel.start, sel.end)
+                val newText = draftContent.substring(0, start) + pastedText + draftContent.substring(end)
+                onContentChange(newText)
+                val newCursor = start + pastedText.length
+                onTextFieldValueChange?.invoke(TextFieldValue(text = newText, selection = TextRange(newCursor)))
+                showToast("Pasted from clipboard")
+            } else {
+                showToast("Clipboard is empty")
+            }
+        }
+        "paste_special" -> {
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val clip = clipboard.primaryClip
+            if (clip != null && clip.itemCount > 0) {
+                val pastedText = clip.getItemAt(0).text?.toString() ?: return
+                val sel = textFieldValue?.selection ?: TextRange(draftContent.length)
+                val start = minOf(sel.start, sel.end)
+                val end = maxOf(sel.start, sel.end)
+                val newText = draftContent.substring(0, start) + pastedText + draftContent.substring(end)
+                onContentChange(newText)
+                val newCursor = start + pastedText.length
+                onTextFieldValueChange?.invoke(TextFieldValue(text = newText, selection = TextRange(newCursor)))
+                showToast("Pasted as plain text")
+            } else {
+                showToast("Clipboard is empty")
+            }
         }
         "align_left" -> {
             onAlignmentChange(TextAlign.Left)
@@ -2039,6 +2095,9 @@ fun WorkspacePane(
         var isEditorFocused by remember { mutableStateOf(false) }
         val context = androidx.compose.ui.platform.LocalContext.current
 
+        val clipboardHistory = remember { mutableStateListOf<String>() }
+        var showClipboardHistory by remember { mutableStateOf(false) }
+
         val undoRedoManager = remember(selectedDoc.id) { DocUndoRedoManager(selectedDoc.id) }
         var formatVersion by remember { mutableStateOf(0) } // Force recomposition when formatting spans change
         var undoRedoTrigger by remember { mutableStateOf(0) } // To force UI recompose when stacks change
@@ -2471,6 +2530,7 @@ fun WorkspacePane(
                                     pushSnapshot()
                                     executeRibbonAction(
                                         actionId = action,
+                                        context = context,
                                         draftContent = draftContent,
                                         onContentChange = onContentChange,
                                         selectedDoc = selectedDoc,
@@ -2502,7 +2562,8 @@ fun WorkspacePane(
                                                 onContentChange(newVal.text)
                                             }
                                         },
-                                        lastSelection = lastSelection
+                                        lastSelection = lastSelection,
+                                        onHistoryAdd = { clipboardHistory.add(it) }
                                     )
                                 }.filter { tool ->
                                     (tool.tab.equals(activeRibbonTab, ignoreCase = true) || ribbonSearchQuery.isNotEmpty()) &&
@@ -2535,6 +2596,7 @@ fun WorkspacePane(
                                         pushSnapshot()
                                         executeRibbonAction(
                                             actionId = action,
+                                            context = context,
                                             draftContent = draftContent,
                                             onContentChange = onContentChange,
                                             selectedDoc = selectedDoc,
@@ -2566,10 +2628,11 @@ fun WorkspacePane(
                                                     onContentChange(newVal.text)
                                                 }
                                             },
-                                            lastSelection = lastSelection,
-                                            formatVersion = formatVersion,
-                                            onFormatVersionChange = { formatVersion = it }
-                                        )
+                                        lastSelection = lastSelection,
+                                        formatVersion = formatVersion,
+                                        onFormatVersionChange = { formatVersion = it },
+                                        onHistoryAdd = { clipboardHistory.add(it) }
+                                    )
                                     }
 
                                     if (activeRibbonTab.equals("Home", ignoreCase = true) && ribbonSearchQuery.isEmpty()) {
@@ -3114,96 +3177,38 @@ fun WorkspacePane(
                                                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                                                         verticalAlignment = Alignment.CenterVertically
                                                     ) {
-                                                        Card(
-                                                            shape = RoundedCornerShape(8.dp),
-                                                            colors = CardDefaults.cardColors(
-                                                                containerColor = if (isSystemInDarkTheme()) Color(0xFF323236) else Color(0xFFF1F3F6)
-                                                            ),
-                                                            modifier = Modifier
-                                                                .weight(1.5f)
-                                                                .height(84.dp)
-                                                                .clickable {
-                                                                    onContentChange(draftContent + " [Pasted Clipboard Data]")
-                                                                    coroutineScope.launch {
-                                                                        snackbarHostState.showSnackbar("Pasted active clipboard data into draft content")
-                                                                    }
-                                                                }
-                                                        ) {
-                                                            Column(
-                                                                modifier = Modifier.fillMaxSize().padding(8.dp),
-                                                                verticalArrangement = Arrangement.Center,
-                                                                horizontalAlignment = Alignment.CenterHorizontally
-                                                            ) {
-                                                                Icon(
-                                                                    imageVector = Icons.Outlined.Done,
-                                                                    contentDescription = "Paste",
-                                                                    tint = if (selectedDoc.type == "word") DocWordColor else if (selectedDoc.type == "sheet") DocSheetColor else DocSlideColor,
-                                                                    modifier = Modifier.size(24.dp)
-                                                                )
-                                                                Spacer(modifier = Modifier.height(4.dp))
-                                                                Text("PASTE", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (isSystemInDarkTheme()) Color.White else Color.Black)
+                                                        val btnBg = if (isSystemInDarkTheme()) Color(0xFF323236) else Color(0xFFF1F3F6)
+                                                        val accent = if (selectedDoc.type == "word") DocWordColor else if (selectedDoc.type == "sheet") DocSheetColor else DocSlideColor
+                                                        val textColor = if (isSystemInDarkTheme()) Color.White else Color.Black
+
+                                                        Box(modifier = Modifier.weight(1f).height(84.dp).clip(RoundedCornerShape(8.dp)).background(btnBg).clickable { onAction("cut") }, contentAlignment = Alignment.Center) {
+                                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                                Icon(Icons.Outlined.Close, contentDescription = "Cut", tint = accent, modifier = Modifier.size(22.dp))
+                                                                Spacer(Modifier.height(4.dp))
+                                                                Text("Cut", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = textColor)
                                                             }
                                                         }
-
-                                                        Column(
-                                                            modifier = Modifier.weight(3.5f),
-                                                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                                                        ) {
-                                                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                                Box(modifier = Modifier.weight(1f).height(38.dp).clip(RoundedCornerShape(8.dp)).background(if (isSystemInDarkTheme()) Color(0xFF323236) else Color(0xFFF1F3F6)).clickable {
-                                                                    coroutineScope.launch {
-                                                                        snackbarHostState.showSnackbar("Content cut to secure clipboard draft")
-                                                                    }
-                                                                }, contentAlignment = Alignment.Center) {
-                                                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                                                                        Icon(Icons.Outlined.Close, contentDescription = "Cut", modifier = Modifier.size(14.dp), tint = if (isSystemInDarkTheme()) Color.LightGray else Color.Gray)
-                                                                        Spacer(modifier = Modifier.width(4.dp))
-                                                                        Text("Cut", fontSize = 10.sp, color = if (isSystemInDarkTheme()) Color.White else Color.Black)
-                                                                    }
-                                                                }
-                                                                Box(modifier = Modifier.weight(1f).height(38.dp).clip(RoundedCornerShape(8.dp)).background(if (isSystemInDarkTheme()) Color(0xFF323236) else Color(0xFFF1F3F6)).clickable {
-                                                                    coroutineScope.launch {
-                                                                        snackbarHostState.showSnackbar("Copied full draft to clipboard!")
-                                                                    }
-                                                                }, contentAlignment = Alignment.Center) {
-                                                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                                                                        Icon(Icons.Outlined.Share, contentDescription = "Copy", modifier = Modifier.size(14.dp), tint = if (isSystemInDarkTheme()) Color.LightGray else Color.Gray)
-                                                                        Spacer(modifier = Modifier.width(4.dp))
-                                                                        Text("Copy", fontSize = 10.sp, color = if (isSystemInDarkTheme()) Color.White else Color.Black)
-                                                                    }
-                                                                }
-                                                                Box(modifier = Modifier.weight(1.2f).height(38.dp).clip(RoundedCornerShape(8.dp)).background(if (isSystemInDarkTheme()) Color(0xFF323236) else Color(0xFFF1F3F6)).clickable {
-                                                                    coroutineScope.launch {
-                                                                        snackbarHostState.showSnackbar("Paste Special: Unformatted UTF-8 Text applied")
-                                                                    }
-                                                                }, contentAlignment = Alignment.Center) {
-                                                                    Text("Special...", fontSize = 9.sp, fontWeight = FontWeight.SemiBold, color = if (isSystemInDarkTheme()) Color.White else Color.Black)
-                                                                }
+                                                        Box(modifier = Modifier.weight(1f).height(84.dp).clip(RoundedCornerShape(8.dp)).background(btnBg).clickable { onAction("copy") }, contentAlignment = Alignment.Center) {
+                                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                                Icon(Icons.Outlined.Share, contentDescription = "Copy", tint = accent, modifier = Modifier.size(22.dp))
+                                                                Spacer(Modifier.height(4.dp))
+                                                                Text("Copy", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = textColor)
                                                             }
-
-                                                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                                Box(modifier = Modifier.weight(1.5f).height(38.dp).clip(RoundedCornerShape(8.dp)).background(if (isSystemInDarkTheme()) Color(0xFF323236) else Color(0xFFF1F3F6)).clickable {
-                                                                    coroutineScope.launch {
-                                                                        snackbarHostState.showSnackbar("Format Painter loaded! Select target lines to paint style.")
-                                                                    }
-                                                                }, contentAlignment = Alignment.Center) {
-                                                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                                                                        Icon(Icons.Outlined.Build, contentDescription = "Painter", modifier = Modifier.size(14.dp), tint = if (isSystemInDarkTheme()) Color.LightGray else Color.Gray)
-                                                                        Spacer(modifier = Modifier.width(4.dp))
-                                                                        Text("Paint Style", fontSize = 10.sp, color = if (isSystemInDarkTheme()) Color.White else Color.Black)
-                                                                    }
-                                                                }
-                                                                Box(modifier = Modifier.weight(1.5f).height(38.dp).clip(RoundedCornerShape(8.dp)).background(if (isSystemInDarkTheme()) Color(0xFF323236) else Color(0xFFF1F3F6)).clickable {
-                                                                    coroutineScope.launch {
-                                                                        snackbarHostState.showSnackbar("Opened Clipboard History queue (3 items stored).")
-                                                                    }
-                                                                }, contentAlignment = Alignment.Center) {
-                                                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                                                                        Icon(Icons.Outlined.Info, contentDescription = "History", modifier = Modifier.size(14.dp), tint = if (isSystemInDarkTheme()) Color.LightGray else Color.Gray)
-                                                                        Spacer(modifier = Modifier.width(4.dp))
-                                                                        Text("History", fontSize = 10.sp, color = if (isSystemInDarkTheme()) Color.White else Color.Black)
-                                                                    }
-                                                                }
+                                                        }
+                                                        Box(modifier = Modifier.weight(1f).height(84.dp).clip(RoundedCornerShape(8.dp)).background(btnBg).clickable { onAction("paste") }, contentAlignment = Alignment.Center) {
+                                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                                Icon(Icons.Outlined.Done, contentDescription = "Paste", tint = accent, modifier = Modifier.size(22.dp))
+                                                                Spacer(Modifier.height(4.dp))
+                                                                Text("Paste", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = textColor)
+                                                            }
+                                                        }
+                                                        Box(modifier = Modifier.weight(1f).height(84.dp).clip(RoundedCornerShape(8.dp)).background(btnBg).clickable {
+                                                            showClipboardHistory = true
+                                                        }, contentAlignment = Alignment.Center) {
+                                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                                Icon(Icons.Outlined.Info, contentDescription = "History", tint = accent, modifier = Modifier.size(22.dp))
+                                                                Spacer(Modifier.height(4.dp))
+                                                                Text("History", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = textColor)
                                                             }
                                                         }
                                                     }
@@ -3652,6 +3657,54 @@ fun WorkspacePane(
                     },
                     confirmButton = {
                         TextButton(onClick = { pageNumberPositionMenu = null }) { Text("Cancel") }
+                    }
+                )
+            }
+            if (showClipboardHistory) {
+                AlertDialog(
+                    onDismissRequest = { showClipboardHistory = false },
+                    title = { Text("Clipboard History") },
+                    text = {
+                        if (clipboardHistory.isEmpty()) {
+                            Text("No clipboard history yet")
+                        } else {
+                                            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                                                clipboardHistory.reversed().forEach { entry ->
+                                                    TextButton(
+                                                        onClick = {
+                                                            val sel = editorTextFieldValue.selection
+                                                            val start = minOf(sel.start, sel.end)
+                                                            val end = maxOf(sel.start, sel.end)
+                                                            val newText = draftContent.substring(0, start) + entry + draftContent.substring(end)
+                                                            onContentChange(newText)
+                                                            val newCursor = start + entry.length
+                                                            editorTextFieldValue = TextFieldValue(text = newText, selection = TextRange(newCursor))
+                                                            showClipboardHistory = false
+                                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            text = entry.take(80) + if (entry.length > 80) "..." else "",
+                                            textAlign = TextAlign.Start,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            clipboardHistory.clear()
+                            showClipboardHistory = false
+                        }) {
+                            Text("Clear All")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showClipboardHistory = false }) {
+                            Text("Close")
+                        }
                     }
                 )
             }
