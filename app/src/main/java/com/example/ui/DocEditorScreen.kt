@@ -3183,21 +3183,21 @@ fun WorkspacePane(
 
                                                         Box(modifier = Modifier.weight(1f).height(84.dp).clip(RoundedCornerShape(8.dp)).background(btnBg).clickable { onAction("cut") }, contentAlignment = Alignment.Center) {
                                                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                Icon(Icons.Outlined.Close, contentDescription = "Cut", tint = accent, modifier = Modifier.size(22.dp))
+                                                                Icon(Icons.Outlined.ContentCut, contentDescription = "Cut", tint = accent, modifier = Modifier.size(22.dp))
                                                                 Spacer(Modifier.height(4.dp))
                                                                 Text("Cut", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = textColor)
                                                             }
                                                         }
                                                         Box(modifier = Modifier.weight(1f).height(84.dp).clip(RoundedCornerShape(8.dp)).background(btnBg).clickable { onAction("copy") }, contentAlignment = Alignment.Center) {
                                                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                Icon(Icons.Outlined.Share, contentDescription = "Copy", tint = accent, modifier = Modifier.size(22.dp))
+                                                                Icon(Icons.Outlined.ContentCopy, contentDescription = "Copy", tint = accent, modifier = Modifier.size(22.dp))
                                                                 Spacer(Modifier.height(4.dp))
                                                                 Text("Copy", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = textColor)
                                                             }
                                                         }
                                                         Box(modifier = Modifier.weight(1f).height(84.dp).clip(RoundedCornerShape(8.dp)).background(btnBg).clickable { onAction("paste") }, contentAlignment = Alignment.Center) {
                                                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                Icon(Icons.Outlined.Done, contentDescription = "Paste", tint = accent, modifier = Modifier.size(22.dp))
+                                                                Icon(Icons.Outlined.ContentPaste, contentDescription = "Paste", tint = accent, modifier = Modifier.size(22.dp))
                                                                 Spacer(Modifier.height(4.dp))
                                                                 Text("Paste", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = textColor)
                                                             }
@@ -3206,7 +3206,7 @@ fun WorkspacePane(
                                                             showClipboardHistory = true
                                                         }, contentAlignment = Alignment.Center) {
                                                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                Icon(Icons.Outlined.Info, contentDescription = "History", tint = accent, modifier = Modifier.size(22.dp))
+                                                                Icon(Icons.Outlined.History, contentDescription = "History", tint = accent, modifier = Modifier.size(22.dp))
                                                                 Spacer(Modifier.height(4.dp))
                                                                 Text("History", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = textColor)
                                                             }
