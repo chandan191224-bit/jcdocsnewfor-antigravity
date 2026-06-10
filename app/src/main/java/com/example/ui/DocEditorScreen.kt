@@ -87,6 +87,12 @@ import java.util.*
 
 data class DocFormatSpan(var start: Int, var end: Int, val type: String, val value: String = "")
 
+data class CopyFormattedData(
+    val text: String,
+    val spans: List<DocFormatSpan>,
+    val sourceOffset: Int
+)
+
 data class DocTextStyle(
     val name: String,
     val fontSize: Int = 16,
@@ -949,7 +955,6 @@ fun RibbonToolCard(
 @Composable
 fun EditingButton(
     label: String,
-    shortcut: String,
     icon: ImageVector,
     accentColor: Color,
     isDarkTheme: Boolean,
@@ -992,13 +997,6 @@ fun EditingButton(
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = if (isDarkTheme) Color.White else Color.Black,
-                maxLines = 1
-            )
-            Text(
-                text = shortcut,
-                fontSize = 8.sp,
-                fontWeight = FontWeight.Normal,
-                color = Color.Gray,
                 maxLines = 1
             )
         }
@@ -1219,7 +1217,8 @@ fun executeRibbonAction(
     lastSelection: TextRange? = null,
     formatVersion: Int = 0,
     onFormatVersionChange: (Int) -> Unit = {},
-    onHistoryAdd: ((String) -> Unit)? = null
+    onHistoryAdd: ((String) -> Unit)? = null,
+    onCopyFormatted: ((String, List<DocFormatSpan>, Int) -> Unit)? = null
 ) {
     fun showToast(msg: String) {
         Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
@@ -1260,6 +1259,10 @@ fun executeRibbonAction(
                 val clip = ClipData.newPlainText("JCdocs", selectedText)
                 clipboard.setPrimaryClip(clip)
                 onHistoryAdd?.invoke(selectedText)
+                val spansInRange = DocFormatRepository.getSpans(selectedDoc.id)
+                    .filter { it.start < end && it.end > start }
+                    .map { it.copy(start = maxOf(it.start, start) - start, end = minOf(it.end, end) - start) }
+                onCopyFormatted?.invoke(selectedText, spansInRange, start)
                 showToast("Copied to clipboard")
             } else {
                 showToast("Select text to copy")
@@ -1275,6 +1278,10 @@ fun executeRibbonAction(
                 val clip = ClipData.newPlainText("JCdocs", selectedText)
                 clipboard.setPrimaryClip(clip)
                 onHistoryAdd?.invoke(selectedText)
+                val spansInRange = DocFormatRepository.getSpans(selectedDoc.id)
+                    .filter { it.start < end && it.end > start }
+                    .map { it.copy(start = maxOf(it.start, start) - start, end = minOf(it.end, end) - start) }
+                onCopyFormatted?.invoke(selectedText, spansInRange, start)
                 val newText = draftContent.substring(0, start) + draftContent.substring(end)
                 onContentChange(newText)
                 onTextFieldValueChange?.invoke(TextFieldValue(text = newText, selection = TextRange(start)))
@@ -2531,6 +2538,7 @@ fun WorkspacePane(
 
         val clipboardHistory = remember { mutableStateListOf<String>() }
         var showClipboardHistory by remember { mutableStateOf(false) }
+        var copiedFormattedData by remember { mutableStateOf<CopyFormattedData?>(null) }
 
         val undoRedoManager = remember(selectedDoc.id) { DocUndoRedoManager(selectedDoc.id) }
         var formatVersion by remember { mutableStateOf(0) } // Force recomposition when formatting spans change
@@ -2687,6 +2695,7 @@ fun WorkspacePane(
 
         var activeFontFamily by remember { mutableStateOf("Default") }
         var activeFontSize by remember { mutableStateOf("16") }
+        var showPasteSpecialDialog by remember { mutableStateOf(false) }
         var showFontColorPicker by remember { mutableStateOf(false) }
         var showHighlightPicker by remember { mutableStateOf(false) }
 
@@ -3036,7 +3045,8 @@ fun WorkspacePane(
                                             }
                                         },
                                         lastSelection = lastSelection,
-                                        onHistoryAdd = { clipboardHistory.add(it) }
+                                        onHistoryAdd = { clipboardHistory.add(it) },
+                                        onCopyFormatted = { text, spans, off -> copiedFormattedData = CopyFormattedData(text, spans, off) }
                                     )
                                 }.filter { tool ->
                                     (tool.tab.equals(activeRibbonTab, ignoreCase = true) || ribbonSearchQuery.isNotEmpty()) &&
@@ -3103,7 +3113,8 @@ fun WorkspacePane(
                                         lastSelection = lastSelection,
                                         formatVersion = formatVersion,
                                         onFormatVersionChange = { formatVersion = it },
-                                        onHistoryAdd = { clipboardHistory.add(it) }
+                                        onHistoryAdd = { clipboardHistory.add(it) },
+                                        onCopyFormatted = { text, spans, off -> copiedFormattedData = CopyFormattedData(text, spans, off) }
                                     )
                                     }
 
@@ -3667,7 +3678,7 @@ fun WorkspacePane(
                                                                 Text("Copy", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = textColor)
                                                             }
                                                         }
-                                                        Box(modifier = Modifier.weight(1f).height(84.dp).clip(RoundedCornerShape(8.dp)).background(btnBg).clickable { onAction("paste") }, contentAlignment = Alignment.Center) {
+                                                        Box(modifier = Modifier.weight(1f).height(84.dp).clip(RoundedCornerShape(8.dp)).background(btnBg).clickable { showPasteSpecialDialog = true }, contentAlignment = Alignment.Center) {
                                                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                                                 Icon(Icons.Outlined.ContentPaste, contentDescription = "Paste", tint = accent, modifier = Modifier.size(22.dp))
                                                                 Spacer(Modifier.height(4.dp))
@@ -3764,7 +3775,6 @@ fun WorkspacePane(
                                                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                                             EditingButton(
                                                                 label = "Find",
-                                                                shortcut = "Ctrl+F",
                                                                 icon = Icons.Outlined.Search,
                                                                 accentColor = accentColor,
                                                                 isDarkTheme = isSystemInDarkTheme(),
@@ -3773,7 +3783,6 @@ fun WorkspacePane(
                                                             )
                                                             EditingButton(
                                                                 label = "Replace",
-                                                                shortcut = "Ctrl+H",
                                                                 icon = Icons.Outlined.FindReplace,
                                                                 accentColor = accentColor,
                                                                 isDarkTheme = isSystemInDarkTheme(),
@@ -3782,7 +3791,6 @@ fun WorkspacePane(
                                                             )
                                                             EditingButton(
                                                                 label = "Go To",
-                                                                shortcut = "Ctrl+G",
                                                                 icon = Icons.Outlined.PinDrop,
                                                                 accentColor = accentColor,
                                                                 isDarkTheme = isSystemInDarkTheme(),
@@ -3811,15 +3819,11 @@ fun WorkspacePane(
                                                     val docWords = draftContent.split("\\s+".toRegex()).filter { it.isNotBlank() }.size
                                                     val docChars = draftContent.length
                                                     val docCharsNoSpace = draftContent.count { !it.isWhitespace() }
-                                                    val docLines = draftContent.split("\n+".toRegex()).filter { it.isNotBlank() }.size
                                                     val docParagraphs = draftContent.split("\n\n+".toRegex()).filter { it.isNotBlank() }.size.coerceAtLeast(1)
                                                     val actualPages = draftContent.split("\u000C").size
 
                                                     val selWords = if (hasSelection) selectedText.split("\\s+".toRegex()).filter { it.isNotBlank() }.size else 0
                                                     val selChars = if (hasSelection) selectedText.length else 0
-
-                                                    val readingTimeMin = (docWords / 200f).coerceAtLeast(0.5f)
-                                                    val speakingTimeMin = (docWords / 130f).coerceAtLeast(0.5f)
 
                                                     Card(
                                                         shape = RoundedCornerShape(12.dp),
@@ -3863,27 +3867,8 @@ fun WorkspacePane(
                                                                     Text("Paragraphs", fontSize = 10.sp, color = Color.Gray)
                                                                 }
                                                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                    Text(docLines.toString(), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (isSystemInDarkTheme()) Color.White else Color.Black)
-                                                                    Text("Lines", fontSize = 10.sp, color = Color.Gray)
-                                                                }
-                                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                                                     Text(actualPages.toString(), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (isSystemInDarkTheme()) Color.White else Color.Black)
                                                                     Text("Pages", fontSize = 10.sp, color = Color.Gray)
-                                                                }
-                                                            }
-                                                            HorizontalDivider(color = if (isSystemInDarkTheme()) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.05f))
-                                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                    val min = readingTimeMin.toInt()
-                                                                    val sec = ((readingTimeMin - min) * 60).toInt()
-                                                                    Text(if (min > 0) "${min}m ${sec}s" else "${sec}s", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (isSystemInDarkTheme()) Color.White else Color.Black)
-                                                                    Text("Read Time", fontSize = 10.sp, color = Color.Gray)
-                                                                }
-                                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                    val min = speakingTimeMin.toInt()
-                                                                    val sec = ((speakingTimeMin - min) * 60).toInt()
-                                                                    Text(if (min > 0) "${min}m ${sec}s" else "${sec}s", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (isSystemInDarkTheme()) Color.White else Color.Black)
-                                                                    Text("Speak Time", fontSize = 10.sp, color = Color.Gray)
                                                                 }
                                                             }
                                                         }
@@ -4513,6 +4498,60 @@ fun WorkspacePane(
                     }
                 )
             }
+            if (showPasteSpecialDialog) {
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                val clip = clipboard.primaryClip
+                val clipText = clip?.getItemAt(0)?.text?.toString() ?: ""
+                AlertDialog(
+                    onDismissRequest = { showPasteSpecialDialog = false },
+                    title = { Text("Paste Special", fontWeight = FontWeight.Bold) },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Choose paste format:", fontSize = 13.sp, color = Color.Gray)
+                            Text("“${clipText.take(50)}${if (clipText.length > 50) "..." else ""}”", fontSize = 12.sp, color = if (isSystemInDarkTheme()) Color.White else Color.Black, maxLines = 2)
+                        }
+                    },
+                    confirmButton = {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(
+                                onClick = {
+                                    val sel = editorTextFieldValue.selection
+                                    val start = minOf(sel.start, sel.end)
+                                    val end = maxOf(sel.start, sel.end)
+                                    val newText = draftContent.substring(0, start) + clipText + draftContent.substring(end)
+                                    onContentChange(newText)
+                                    val newCursor = start + clipText.length
+                                    editorTextFieldValue = TextFieldValue(text = newText, selection = TextRange(newCursor))
+                                    showPasteSpecialDialog = false
+                                }
+                            ) { Text("Text") }
+                            TextButton(
+                                onClick = {
+                                    val sel = editorTextFieldValue.selection
+                                    val start = minOf(sel.start, sel.end)
+                                    val end = maxOf(sel.start, sel.end)
+                                    val newText = draftContent.substring(0, start) + clipText + draftContent.substring(end)
+                                    onContentChange(newText)
+                                    val newCursor = start + clipText.length
+                                    editorTextFieldValue = TextFieldValue(text = newText, selection = TextRange(newCursor))
+                                    val data = copiedFormattedData
+                                    if (data != null && data.text == clipText) {
+                                        for (span in data.spans) {
+                                            DocFormatRepository.applySpan(selectedDoc.id, span.type, span.value, start + span.start, start + span.end)
+                                        }
+                                        formatVersion++
+                                    }
+                                    showPasteSpecialDialog = false
+                                }
+                            ) { Text("Source Formatting") }
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showPasteSpecialDialog = false }) { Text("Cancel") }
+                    }
+                )
+            }
+
             if (showClipboardHistory) {
                 AlertDialog(
                     onDismissRequest = { showClipboardHistory = false },
@@ -4521,19 +4560,19 @@ fun WorkspacePane(
                         if (clipboardHistory.isEmpty()) {
                             Text("No clipboard history yet")
                         } else {
-                                            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                                                clipboardHistory.reversed().forEach { entry ->
-                                                    TextButton(
-                                                        onClick = {
-                                                            val sel = editorTextFieldValue.selection
-                                                            val start = minOf(sel.start, sel.end)
-                                                            val end = maxOf(sel.start, sel.end)
-                                                            val newText = draftContent.substring(0, start) + entry + draftContent.substring(end)
-                                                            onContentChange(newText)
-                                                            val newCursor = start + entry.length
-                                                            editorTextFieldValue = TextFieldValue(text = newText, selection = TextRange(newCursor))
-                                                            showClipboardHistory = false
-                                                        },
+                            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                                clipboardHistory.reversed().forEach { entry ->
+                                    TextButton(
+                                        onClick = {
+                                            val sel = editorTextFieldValue.selection
+                                            val start = minOf(sel.start, sel.end)
+                                            val end = maxOf(sel.start, sel.end)
+                                            val newText = draftContent.substring(0, start) + entry + draftContent.substring(end)
+                                            onContentChange(newText)
+                                            val newCursor = start + entry.length
+                                            editorTextFieldValue = TextFieldValue(text = newText, selection = TextRange(newCursor))
+                                            showClipboardHistory = false
+                                        },
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Text(
