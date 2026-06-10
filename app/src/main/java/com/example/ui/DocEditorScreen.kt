@@ -87,6 +87,48 @@ import java.util.*
 
 data class DocFormatSpan(var start: Int, var end: Int, val type: String, val value: String = "")
 
+data class DocTextStyle(
+    val name: String,
+    val fontSize: Int = 16,
+    val isBold: Boolean = false,
+    val isItalic: Boolean = false,
+    val isUnderline: Boolean = false,
+    val color: String? = null,
+    val alignment: String? = null,
+    val lineSpacing: Float? = null,
+    val isDefault: Boolean = false
+)
+
+fun getDefaultTextStyles(): List<DocTextStyle> = listOf(
+    DocTextStyle("Normal", fontSize = 16, isDefault = true),
+    DocTextStyle("Title", fontSize = 24, isBold = true, color = "#1A1A1A", isDefault = true),
+    DocTextStyle("Subtitle", fontSize = 18, isItalic = true, color = "#555555", isDefault = true),
+    DocTextStyle("Heading 1", fontSize = 22, isBold = true, isDefault = true),
+    DocTextStyle("Heading 2", fontSize = 20, isBold = true, isDefault = true),
+    DocTextStyle("Heading 3", fontSize = 18, isBold = true, isDefault = true),
+    DocTextStyle("Quote", fontSize = 16, isItalic = true, color = "#666666", isDefault = true)
+)
+
+fun applyStyleAttributes(docId: Int, style: DocTextStyle, start: Int, end: Int) {
+    DocFormatRepository.removeSpanTypeRange(docId, "bold", start, end)
+    if (style.isBold) DocFormatRepository.applySpan(docId, "bold", "", start, end)
+
+    DocFormatRepository.removeSpanTypeRange(docId, "italic", start, end)
+    if (style.isItalic) DocFormatRepository.applySpan(docId, "italic", "", start, end)
+
+    DocFormatRepository.removeSpanTypeRange(docId, "underline", start, end)
+    if (style.isUnderline) DocFormatRepository.applySpan(docId, "underline", "", start, end)
+
+    DocFormatRepository.removeSpanTypeRange(docId, "color", start, end)
+    if (style.color != null) DocFormatRepository.applySpan(docId, "color", style.color, start, end)
+
+    DocFormatRepository.removeSpanTypeRange(docId, "alignment", start, end)
+    if (style.alignment != null) DocFormatRepository.applySpan(docId, "alignment", style.alignment, start, end)
+
+    DocFormatRepository.removeSpanTypeRange(docId, "lineSpacing", start, end)
+    if (style.lineSpacing != null) DocFormatRepository.applySpan(docId, "lineSpacing", style.lineSpacing.toString(), start, end)
+}
+
 object DocFormatRepository {
     private val spans = mutableMapOf<Int, androidx.compose.runtime.snapshots.SnapshotStateList<DocFormatSpan>>()
     
@@ -904,6 +946,65 @@ fun RibbonToolCard(
     }
 }
 
+@Composable
+fun EditingButton(
+    label: String,
+    shortcut: String,
+    icon: ImageVector,
+    accentColor: Color,
+    isDarkTheme: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val bgColor = if (isDarkTheme) Color(0xFF2B2B30) else Color(0xFFF1F3F6)
+    val borderColor = if (isDarkTheme) Color.White.copy(alpha = 0.06f) else Color.Black.copy(alpha = 0.04f)
+    Card(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(containerColor = bgColor),
+        border = BorderStroke(0.5.dp, borderColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(accentColor.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = label,
+                    tint = accentColor,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = label,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = if (isDarkTheme) Color.White else Color.Black,
+                maxLines = 1
+            )
+            Text(
+                text = shortcut,
+                fontSize = 8.sp,
+                fontWeight = FontWeight.Normal,
+                color = Color.Gray,
+                maxLines = 1
+            )
+        }
+    }
+}
+
 fun getRibbonTools(
     selectedDoc: DocEntity,
     onActionText: (String) -> Unit
@@ -937,33 +1038,7 @@ fun getRibbonTools(
             tab = "Home",
             actionId = "underline"
         ),
-        RibbonTool(
-            id = "align_left",
-            title = "Align Left",
-            description = "Position text on the left",
-            icon = Icons.Outlined.FormatAlignLeft,
-            category = "Paragraph Alignment",
-            tab = "Home",
-            actionId = "align_left"
-        ),
-        RibbonTool(
-            id = "align_center",
-            title = "Center",
-            description = "Center document paragraph",
-            icon = Icons.Outlined.FormatAlignCenter,
-            category = "Paragraph Alignment",
-            tab = "Home",
-            actionId = "align_center"
-        ),
-        RibbonTool(
-            id = "align_right",
-            title = "Align Right",
-            description = "Position text on the right",
-            icon = Icons.Outlined.FormatAlignRight,
-            category = "Paragraph Alignment",
-            tab = "Home",
-            actionId = "align_right"
-        ),
+
         RibbonTool(
             id = "theme_white",
             title = "White Mode",
@@ -2606,7 +2681,6 @@ fun WorkspacePane(
 
         var isFontExpanded by remember { mutableStateOf(true) }
         var isClipboardExpanded by remember { mutableStateOf(true) }
-        var isParagraphExpanded by remember { mutableStateOf(true) }
         var isStylesExpanded by remember { mutableStateOf(true) }
         var isEditingExpanded by remember { mutableStateOf(true) }
         var isStatsExpanded by remember { mutableStateOf(true) }
@@ -2620,6 +2694,26 @@ fun WorkspacePane(
         var showNumberFormatDialog by remember { mutableStateOf(false) }
         var showLineSpacingDialog by remember { mutableStateOf(false) }
         var showBordersDialog by remember { mutableStateOf(false) }
+        var showFindDialog by remember { mutableStateOf(false) }
+        var showGoToDialog by remember { mutableStateOf(false) }
+        var findQuery by remember { mutableStateOf("") }
+        var replaceQuery by remember { mutableStateOf("") }
+        var findMode by remember { mutableStateOf("find") }
+        var matchCase by remember { mutableStateOf(false) }
+        var wholeWord by remember { mutableStateOf(false) }
+        var currentMatchIndex by remember { mutableIntStateOf(0) }
+        var textStyles by remember { mutableStateOf(getDefaultTextStyles()) }
+        var showStyleManager by remember { mutableStateOf(false) }
+        var showStyleEditor by remember { mutableStateOf(false) }
+        var editingStyleIndex by remember { mutableIntStateOf(-1) }
+        var editingStyleName by remember { mutableStateOf("") }
+        var editingStyleFontSize by remember { mutableIntStateOf(16) }
+        var editingStyleBold by remember { mutableStateOf(false) }
+        var editingStyleItalic by remember { mutableStateOf(false) }
+        var editingStyleUnderline by remember { mutableStateOf(false) }
+        var editingStyleColor by remember { mutableStateOf("#000000") }
+        var editingStyleAlignment by remember { mutableStateOf("left") }
+        var editingStyleLineSpacing by remember { mutableStateOf("1.0") }
         var showShadingPicker by remember { mutableStateOf(false) }
         var pageBackgroundColor by remember { mutableStateOf<Color?>(null) }
         var pendingParaAction by remember { mutableStateOf<String?>(null) }
@@ -3593,111 +3687,6 @@ fun WorkspacePane(
                                                 }
                                             }
 
-                                            // --- PARAGRAPH GROUP ---
-                                            item {
-                                                RibbonGroupContainer(
-                                                    title = "Paragraph Formatting",
-                                                    isExpanded = isParagraphExpanded,
-                                                    onToggleExpand = { isParagraphExpanded = !isParagraphExpanded },
-                                                    accentColor = if (selectedDoc.type == "word") DocWordColor else if (selectedDoc.type == "sheet") DocSheetColor else DocSlideColor
-                                                ) {
-                                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                        val btnBg = if (isSystemInDarkTheme()) Color(0xFF323236) else Color(0xFFF1F3F6)
-                                                        val accent = if (selectedDoc.type == "word") DocWordColor else if (selectedDoc.type == "sheet") DocSheetColor else DocSlideColor
-                                                        val textColor = if (isSystemInDarkTheme()) Color.White else Color.Black
-
-                                                        @Composable
-                                                        fun ParaCard(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, action: String, isSelected: Boolean = false) {
-                                                            val cardBg = if (isSelected) accent.copy(alpha = 0.35f) else btnBg
-                                                            Box(modifier = Modifier.weight(1f).height(56.dp).clip(RoundedCornerShape(8.dp)).background(cardBg).clickable { onAction(action) }, contentAlignment = Alignment.Center) {
-                                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                    Icon(icon, contentDescription = label, tint = accent, modifier = Modifier.size(18.dp))
-                                                                    Spacer(Modifier.height(1.dp))
-                                                                    Text(label, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                                }
-                                                            }
-                                                        }
-
-                                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                            ParaCard(Icons.Default.FormatAlignLeft, "Left", "align_left", cursorAlignmentVal == "left")
-                                                            ParaCard(Icons.Outlined.FormatAlignCenter, "Center", "align_center", cursorAlignmentVal == "center")
-                                                            ParaCard(Icons.Default.FormatAlignRight, "Right", "align_right", cursorAlignmentVal == "right")
-                                                            ParaCard(Icons.Outlined.FormatAlignJustify, "Justify", "align_justify", cursorAlignmentVal == "justify")
-                                                            val shadingActive = pageBackgroundColor != null
-                                                            Box(modifier = Modifier.weight(1f).height(56.dp).clip(RoundedCornerShape(8.dp)).background(if (shadingActive) accent.copy(alpha = 0.35f) else btnBg).clickable {
-                                                                if (shadingActive) {
-                                                                    pageBackgroundColor = null
-                                                                    formatVersion++
-                                                                } else {
-                                                                    showShadingPicker = true
-                                                                }
-                                                            }, contentAlignment = Alignment.Center) {
-                                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                    Icon(Icons.Outlined.FormatColorFill, contentDescription = "Shading", tint = accent, modifier = Modifier.size(18.dp))
-                                                                    Spacer(Modifier.height(1.dp))
-                                                                    Text("Shading", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                                }
-                                                            }
-                                                            val borderActive = "border" in activeFormatting
-                                                            Box(modifier = Modifier.weight(1f).height(56.dp).clip(RoundedCornerShape(8.dp)).background(if (borderActive) accent.copy(alpha = 0.35f) else btnBg).clickable {
-                                                                if (borderActive) {
-                                                                    val pos = editorTextFieldValue.selection.start
-                                                                    val pRange = getParagraphRange(draftContent, pos)
-                                                                    val paraEnd = pRange.endInclusive + 1
-                                                                    DocFormatRepository.removeSpanTypeRange(selectedDoc.id, "border", pRange.start, paraEnd)
-                                                                    formatVersion++
-                                                                } else {
-                                                                    showBordersDialog = true
-                                                                }
-                                                            }, contentAlignment = Alignment.Center) {
-                                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                    Icon(Icons.Outlined.BorderAll, contentDescription = "Borders", tint = accent, modifier = Modifier.size(18.dp))
-                                                                    Spacer(Modifier.height(1.dp))
-                                                                    Text("Borders", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                                }
-                                                            }
-                                                        }
-                                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                            Box(modifier = Modifier.weight(1f).height(56.dp).clip(RoundedCornerShape(8.dp)).background(btnBg).clickable { showBulletStyleDialog = true; pendingParaAction = "bullets" }, contentAlignment = Alignment.Center) {
-                                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                    Icon(Icons.Default.FormatListBulleted, contentDescription = "Bullets", tint = accent, modifier = Modifier.size(18.dp))
-                                                                    Spacer(Modifier.height(1.dp))
-                                                                    Text("Bullets", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                                }
-                                                            }
-                                                            Box(modifier = Modifier.weight(1f).height(56.dp).clip(RoundedCornerShape(8.dp)).background(btnBg).clickable { showNumberFormatDialog = true; pendingParaAction = "numbers" }, contentAlignment = Alignment.Center) {
-                                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                    Icon(Icons.Default.FormatListNumbered, contentDescription = "Numbers", tint = accent, modifier = Modifier.size(18.dp))
-                                                                    Spacer(Modifier.height(1.dp))
-                                                                    Text("Numbers", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                                }
-                                                            }
-                                                            ParaCard(Icons.Outlined.Menu, "Multilevel", "multilevel")
-                                                            ParaCard(Icons.Default.FormatIndentDecrease, "Dec", "indent_dec")
-                                                            ParaCard(Icons.Default.FormatIndentIncrease, "Inc", "indent_inc")
-                                                            val spacingActive = "lineSpacing" in activeFormatting
-                                                            Box(modifier = Modifier.weight(1f).height(56.dp).clip(RoundedCornerShape(8.dp)).background(if (spacingActive) accent.copy(alpha = 0.35f) else btnBg).clickable {
-                                                                if (spacingActive) {
-                                                                    val pos = editorTextFieldValue.selection.start
-                                                                    val pRange = getParagraphRange(draftContent, pos)
-                                                                    val paraEnd = pRange.endInclusive + 1
-                                                                    DocFormatRepository.removeSpanTypeRange(selectedDoc.id, "lineSpacing", pRange.start, paraEnd)
-                                                                    formatVersion++
-                                                                } else {
-                                                                    showLineSpacingDialog = true
-                                                                }
-                                                            }, contentAlignment = Alignment.Center) {
-                                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                    Icon(Icons.Outlined.ImportExport, contentDescription = "Spacing", tint = accent, modifier = Modifier.size(18.dp))
-                                                                    Spacer(Modifier.height(1.dp))
-                                                                    Text(if (spacingActive && cursorLineSpacingVal != null) "${cursorLineSpacingVal}x" else "Spacing", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-
                                             // --- STYLES GROUP ---
                                             item {
                                                 RibbonGroupContainer(
@@ -3707,20 +3696,13 @@ fun WorkspacePane(
                                                     accentColor = if (selectedDoc.type == "word") DocWordColor else if (selectedDoc.type == "sheet") DocSheetColor else DocSlideColor
                                                 ) {
                                                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                        val stylesList = listOf(
-                                                            "Normal" to "Regular document copy text style",
-                                                            "Title" to "# Title Heading",
-                                                            "Subtitle" to "## Secondary Section Header",
-                                                            "Heading 1" to "### Heading Tier 1",
-                                                            "Heading 2" to "#### Heading Tier 2",
-                                                            "Heading 3" to "##### Heading Tier 3",
-                                                            "Quote" to "> Inserted blockquote markup style",
-                                                            "Manage" to "Configure default typeface styling template"
-                                                        )
-                                                        val gridRows = stylesList.chunked(4)
-                                                        gridRows.forEach { rowStyles ->
+                                                        val styleNames = textStyles.map { it.name }
+                                                        val gridRows = (styleNames + "Manage").chunked(4)
+                                                        gridRows.forEach { rowItems ->
                                                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                                rowStyles.forEach { (styleName, mockAction) ->
+                                                                rowItems.forEach { item ->
+                                                                    val isManage = item == "Manage"
+                                                                    val style = if (!isManage) textStyles.find { it.name == item } else null
                                                                     Box(
                                                                         modifier = Modifier
                                                                             .weight(1f)
@@ -3728,26 +3710,38 @@ fun WorkspacePane(
                                                                             .clip(RoundedCornerShape(8.dp))
                                                                             .background(if (isSystemInDarkTheme()) Color(0xFF323236) else Color(0xFFF1F3F6))
                                                                             .clickable {
-                                                                                if (styleName == "Manage") {
-                                                                                    coroutineScope.launch { snackbarHostState.showSnackbar("Loading style manager templates configuration dialog...") }
-                                                                                } else {
-                                                                                    onContentChange(draftContent + "\n\n" + mockAction)
-                                                                                    coroutineScope.launch { snackbarHostState.showSnackbar("Style template '$styleName' applied successfully") }
+                                                                                if (isManage) {
+                                                                                    showStyleManager = true
+                                                                                } else if (style != null) {
+                                                                                    val sel = editorTextFieldValue.selection
+                                                                                    val start = minOf(sel.start, sel.end)
+                                                                                    val end = maxOf(sel.start, sel.end)
+                                                                                    if (start < end) {
+                                                                                        applyStyleAttributes(selectedDoc.id, style, start, end)
+                                                                                        formatVersion++
+                                                                                    } else {
+                                                                                        val pos = sel.start
+                                                                                        val pRange = getParagraphRange(draftContent, pos)
+                                                                                        val paraEnd = pRange.endInclusive + 1
+                                                                                        applyStyleAttributes(selectedDoc.id, style, pRange.start, paraEnd)
+                                                                                        formatVersion++
+                                                                                    }
                                                                                 }
                                                                             },
                                                                         contentAlignment = Alignment.Center
                                                                     ) {
                                                                         Text(
-                                                                            text = styleName,
+                                                                            text = if (isManage) "Manage" else item,
                                                                             fontSize = 11.sp,
-                                                                            fontWeight = if (styleName == "Normal") FontWeight.Normal else FontWeight.Bold,
-                                                                            fontStyle = if (styleName == "Subtitle") androidx.compose.ui.text.font.FontStyle.Italic else androidx.compose.ui.text.font.FontStyle.Normal,
+                                                                            fontWeight = if (style?.isBold == true) FontWeight.Bold else if (style?.name == "Normal") FontWeight.Normal else FontWeight.SemiBold,
+                                                                            fontStyle = if (style?.isItalic == true) FontStyle.Italic else FontStyle.Normal,
+                                                                            textDecoration = if (style?.isUnderline == true) TextDecoration.Underline else TextDecoration.None,
                                                                             color = if (isSystemInDarkTheme()) Color.White else Color.Black
                                                                         )
                                                                     }
                                                                 }
-                                                                if (rowStyles.size < 4) {
-                                                                    for (j in 0 until (4 - rowStyles.size)) {
+                                                                if (rowItems.size < 4) {
+                                                                    for (j in 0 until (4 - rowItems.size)) {
                                                                         Spacer(modifier = Modifier.weight(1f))
                                                                     }
                                                                 }
@@ -3760,37 +3754,41 @@ fun WorkspacePane(
                                             // --- EDITING GROUP ---
                                             item {
                                                 RibbonGroupContainer(
-                                                    title = "Editing & Selection",
+                                                    title = "Editing",
                                                     isExpanded = isEditingExpanded,
                                                     onToggleExpand = { isEditingExpanded = !isEditingExpanded },
                                                     accentColor = if (selectedDoc.type == "word") DocWordColor else if (selectedDoc.type == "sheet") DocSheetColor else DocSlideColor
                                                 ) {
+                                                    val accentColor = if (selectedDoc.type == "word") DocWordColor else if (selectedDoc.type == "sheet") DocSheetColor else DocSlideColor
                                                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                        val items = listOf("Find", "Replace", "Go To", "Select All", "Select Similar", "Clear Select")
-                                                        items.chunked(3).forEach { rowItems ->
-                                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                                rowItems.forEach { item ->
-                                                                    Box(
-                                                                        modifier = Modifier
-                                                                            .weight(1f)
-                                                                            .height(40.dp)
-                                                                            .clip(RoundedCornerShape(8.dp))
-                                                                            .background(if (isSystemInDarkTheme()) Color(0xFF323236) else Color(0xFFF1F3F6))
-                                                                            .clickable {
-                                                                                if (item == "Select All") {
-                                                                                    coroutineScope.launch { snackbarHostState.showSnackbar("Entire document content selected (Total ${draftContent.length} chars)") }
-                                                                                } else if (item == "Clear Select") {
-                                                                                    coroutineScope.launch { snackbarHostState.showSnackbar("Active text cursor selection cleared") }
-                                                                                } else {
-                                                                                    coroutineScope.launch { snackbarHostState.showSnackbar("Triggered Command: $item") }
-                                                                                }
-                                                                            },
-                                                                        contentAlignment = Alignment.Center
-                                                                    ) {
-                                                                        Text(item, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (isSystemInDarkTheme()) Color.White else Color.Black)
-                                                                    }
-                                                                }
-                                                            }
+                                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                            EditingButton(
+                                                                label = "Find",
+                                                                shortcut = "Ctrl+F",
+                                                                icon = Icons.Outlined.Search,
+                                                                accentColor = accentColor,
+                                                                isDarkTheme = isSystemInDarkTheme(),
+                                                                onClick = { showFindDialog = true; findMode = "find"; findQuery = ""; replaceQuery = "" },
+                                                                modifier = Modifier.weight(1f)
+                                                            )
+                                                            EditingButton(
+                                                                label = "Replace",
+                                                                shortcut = "Ctrl+H",
+                                                                icon = Icons.Outlined.FindReplace,
+                                                                accentColor = accentColor,
+                                                                isDarkTheme = isSystemInDarkTheme(),
+                                                                onClick = { showFindDialog = true; findMode = "replace"; findQuery = ""; replaceQuery = "" },
+                                                                modifier = Modifier.weight(1f)
+                                                            )
+                                                            EditingButton(
+                                                                label = "Go To",
+                                                                shortcut = "Ctrl+G",
+                                                                icon = Icons.Outlined.PinDrop,
+                                                                accentColor = accentColor,
+                                                                isDarkTheme = isSystemInDarkTheme(),
+                                                                onClick = { showGoToDialog = true },
+                                                                modifier = Modifier.weight(1f)
+                                                            )
                                                         }
                                                     }
                                                 }
@@ -3804,44 +3802,88 @@ fun WorkspacePane(
                                                     onToggleExpand = { isStatsExpanded = !isStatsExpanded },
                                                     accentColor = if (selectedDoc.type == "word") DocWordColor else if (selectedDoc.type == "sheet") DocSheetColor else DocSlideColor
                                                 ) {
-                                                    val wordsCount = draftContent.split("\\s+".toRegex()).filter { it.isNotBlank() }.size
-                                                    val charsCount = draftContent.length
-                                                    val paragraphsCount = draftContent.split("\n+".toRegex()).filter { it.isNotBlank() }.size
-                                                    val pagesCount = maxOf(1, wordsCount / 250 + 1)
-                                                    val readingTime = maxOf(1, wordsCount / 180 + 1)
+                                                    val sel = editorTextFieldValue.selection
+                                                    val hasSelection = !sel.collapsed && sel.start < sel.end
+                                                    val selStart = minOf(sel.start, sel.end)
+                                                    val selEnd = maxOf(sel.start, sel.end)
+                                                    val selectedText = if (hasSelection) draftContent.substring(selStart, selEnd) else ""
+
+                                                    val docWords = draftContent.split("\\s+".toRegex()).filter { it.isNotBlank() }.size
+                                                    val docChars = draftContent.length
+                                                    val docCharsNoSpace = draftContent.count { !it.isWhitespace() }
+                                                    val docLines = draftContent.split("\n+".toRegex()).filter { it.isNotBlank() }.size
+                                                    val docParagraphs = draftContent.split("\n\n+".toRegex()).filter { it.isNotBlank() }.size.coerceAtLeast(1)
+                                                    val actualPages = draftContent.split("\u000C").size
+
+                                                    val selWords = if (hasSelection) selectedText.split("\\s+".toRegex()).filter { it.isNotBlank() }.size else 0
+                                                    val selChars = if (hasSelection) selectedText.length else 0
+
+                                                    val readingTimeMin = (docWords / 200f).coerceAtLeast(0.5f)
+                                                    val speakingTimeMin = (docWords / 130f).coerceAtLeast(0.5f)
 
                                                     Card(
-                                                        shape = RoundedCornerShape(10.dp),
-                                                        colors = CardDefaults.cardColors(
-                                                            containerColor = if (isSystemInDarkTheme()) Color(0xFF1E1E22) else Color(0xFFF7F8FA)
-                                                        ),
+                                                        shape = RoundedCornerShape(12.dp),
+                                                        colors = CardDefaults.cardColors(containerColor = if (isSystemInDarkTheme()) Color(0xFF1E1E22) else Color(0xFFF7F8FA)),
                                                         border = BorderStroke(1.dp, if (isSystemInDarkTheme()) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.05f)),
                                                         modifier = Modifier.fillMaxWidth()
                                                     ) {
                                                         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
+                                                            if (hasSelection) {
+                                                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                                                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                                        Text(selWords.toString(), fontSize = 18.sp, fontWeight = FontWeight.Black, color = if (selectedDoc.type == "word") DocWordColor else if (selectedDoc.type == "sheet") DocSheetColor else DocSlideColor)
+                                                                        Text("Words", fontSize = 10.sp, color = Color.Gray)
+                                                                    }
+                                                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                                        Text(selChars.toString(), fontSize = 18.sp, fontWeight = FontWeight.Black, color = if (selectedDoc.type == "word") DocWordColor else if (selectedDoc.type == "sheet") DocSheetColor else DocSlideColor)
+                                                                        Text("Chars", fontSize = 10.sp, color = Color.Gray)
+                                                                    }
+                                                                }
+                                                                Text("Selection (${selStart}-${selEnd})", fontSize = 9.sp, color = Color.Gray, modifier = Modifier.align(Alignment.CenterHorizontally))
+                                                                HorizontalDivider(color = if (isSystemInDarkTheme()) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.05f))
+                                                            }
+                                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                                                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                    Text(wordsCount.toString(), fontSize = 18.sp, fontWeight = FontWeight.Black, color = if (selectedDoc.type == "word") DocWordColor else if (selectedDoc.type == "sheet") DocSheetColor else DocSlideColor)
+                                                                    Text(docWords.toString(), fontSize = 18.sp, fontWeight = FontWeight.Black, color = if (selectedDoc.type == "word") DocWordColor else if (selectedDoc.type == "sheet") DocSheetColor else DocSlideColor)
                                                                     Text("Words", fontSize = 10.sp, color = Color.Gray)
                                                                 }
                                                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                    Text(charsCount.toString(), fontSize = 18.sp, fontWeight = FontWeight.Black, color = if (selectedDoc.type == "word") DocWordColor else if (selectedDoc.type == "sheet") DocSheetColor else DocSlideColor)
+                                                                    Text(docChars.toString(), fontSize = 18.sp, fontWeight = FontWeight.Black, color = if (selectedDoc.type == "word") DocWordColor else if (selectedDoc.type == "sheet") DocSheetColor else DocSlideColor)
                                                                     Text("Chars", fontSize = 10.sp, color = Color.Gray)
                                                                 }
                                                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                    Text(paragraphsCount.toString(), fontSize = 18.sp, fontWeight = FontWeight.Black, color = if (selectedDoc.type == "word") DocWordColor else if (selectedDoc.type == "sheet") DocSheetColor else DocSlideColor)
-                                                                    Text("Paragraphs", fontSize = 10.sp, color = Color.Gray)
+                                                                    Text(docCharsNoSpace.toString(), fontSize = 18.sp, fontWeight = FontWeight.Black, color = if (selectedDoc.type == "word") DocWordColor else if (selectedDoc.type == "sheet") DocSheetColor else DocSlideColor)
+                                                                    Text("No Space", fontSize = 10.sp, color = Color.Gray)
                                                                 }
                                                             }
                                                             HorizontalDivider(color = if (isSystemInDarkTheme()) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.05f))
-                                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
+                                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                                                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                    Text(pagesCount.toString(), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (isSystemInDarkTheme()) Color.White else Color.Black)
-                                                                    Text("Est. Pages", fontSize = 10.sp, color = Color.Gray)
+                                                                    Text(docParagraphs.toString(), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (isSystemInDarkTheme()) Color.White else Color.Black)
+                                                                    Text("Paragraphs", fontSize = 10.sp, color = Color.Gray)
                                                                 }
                                                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                    Text("${readingTime} min", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (isSystemInDarkTheme()) Color.White else Color.Black)
+                                                                    Text(docLines.toString(), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (isSystemInDarkTheme()) Color.White else Color.Black)
+                                                                    Text("Lines", fontSize = 10.sp, color = Color.Gray)
+                                                                }
+                                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                                    Text(actualPages.toString(), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (isSystemInDarkTheme()) Color.White else Color.Black)
+                                                                    Text("Pages", fontSize = 10.sp, color = Color.Gray)
+                                                                }
+                                                            }
+                                                            HorizontalDivider(color = if (isSystemInDarkTheme()) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.05f))
+                                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                                    val min = readingTimeMin.toInt()
+                                                                    val sec = ((readingTimeMin - min) * 60).toInt()
+                                                                    Text(if (min > 0) "${min}m ${sec}s" else "${sec}s", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (isSystemInDarkTheme()) Color.White else Color.Black)
                                                                     Text("Read Time", fontSize = 10.sp, color = Color.Gray)
+                                                                }
+                                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                                    val min = speakingTimeMin.toInt()
+                                                                    val sec = ((speakingTimeMin - min) * 60).toInt()
+                                                                    Text(if (min > 0) "${min}m ${sec}s" else "${sec}s", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (isSystemInDarkTheme()) Color.White else Color.Black)
+                                                                    Text("Speak Time", fontSize = 10.sp, color = Color.Gray)
                                                                 }
                                                             }
                                                         }
@@ -3990,6 +4032,265 @@ fun WorkspacePane(
                                                     formatVersion++
                                                 },
                                                 onDismiss = { showBordersDialog = false }
+                                            )
+                                        }
+
+                                        if (showFindDialog) {
+                                            val accentColor = if (selectedDoc.type == "word") DocWordColor else if (selectedDoc.type == "sheet") DocSheetColor else DocSlideColor
+                                            val isReplace = findMode == "replace"
+                                            val sourceText = draftContent
+                                            val matches = remember(findQuery, matchCase, wholeWord, sourceText) {
+                                                if (findQuery.isBlank()) emptyList()
+                                                else {
+                                                    val results = mutableListOf<Int>()
+                                                    val text = if (matchCase) sourceText else sourceText.lowercase()
+                                                    val query = if (matchCase) findQuery else findQuery.lowercase()
+                                                    var idx = 0
+                                                    while (true) {
+                                                        idx = text.indexOf(query, idx)
+                                                        if (idx == -1) break
+                                                        if (wholeWord) {
+                                                            val before = if (idx > 0) text[idx - 1] else ' '
+                                                            val after = if (idx + query.length < text.length) text[idx + query.length] else ' '
+                                                            if (before.isLetterOrDigit() || after.isLetterOrDigit()) { idx++; continue }
+                                                        }
+                                                        results.add(idx); idx++
+                                                    }
+                                                    results
+                                                }
+                                            }
+                                            val totalMatches = matches.size
+                                            var currentIdx by remember(findQuery, matchCase, wholeWord) { mutableIntStateOf(0) }
+
+                                            AlertDialog(
+                                                onDismissRequest = { showFindDialog = false },
+                                                title = { Text(if (isReplace) "Find & Replace" else "Find", fontWeight = FontWeight.Bold) },
+                                                text = {
+                                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                        OutlinedTextField(
+                                                            value = findQuery,
+                                                            onValueChange = { findQuery = it; currentIdx = 0 },
+                                                            placeholder = { Text("Find what") },
+                                                            singleLine = true,
+                                                            modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp),
+                                                            textStyle = TextStyle(fontSize = 14.sp),
+                                                            leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null, tint = accentColor, modifier = Modifier.size(18.dp)) }
+                                                        )
+                                                        if (isReplace) {
+                                                            OutlinedTextField(
+                                                                value = replaceQuery,
+                                                                onValueChange = { replaceQuery = it },
+                                                                placeholder = { Text("Replace with") },
+                                                                singleLine = true,
+                                                                modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp),
+                                                                textStyle = TextStyle(fontSize = 14.sp),
+                                                                leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null, tint = accentColor, modifier = Modifier.size(18.dp)) }
+                                                            )
+                                                        }
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                                FilterChip(selected = matchCase, onClick = { matchCase = !matchCase; currentIdx = 0 }, label = { Text("Aa", fontSize = 11.sp) }, leadingIcon = { if (matchCase) Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(12.dp)) }, modifier = Modifier.height(28.dp))
+                                                                FilterChip(selected = wholeWord, onClick = { wholeWord = !wholeWord; currentIdx = 0 }, label = { Text("WW", fontSize = 11.sp) }, leadingIcon = { if (wholeWord) Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(12.dp)) }, modifier = Modifier.height(28.dp))
+                                                            }
+                                                            Spacer(Modifier.weight(1f))
+                                                            if (findQuery.isNotBlank()) Text("$totalMatches", fontSize = 12.sp, color = if (totalMatches > 0) Color.Gray else Color.Red.copy(alpha = 0.7f))
+                                                        }
+                                                        if (findQuery.isNotBlank() && totalMatches > 0) {
+                                                            val displayIdx = (currentIdx % totalMatches + totalMatches) % totalMatches
+                                                            val matchPos = matches[displayIdx]
+                                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                                                Text("${displayIdx + 1} of $totalMatches", fontSize = 12.sp, color = accentColor)
+                                                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                                    IconButton(onClick = { currentIdx = (currentIdx - 1).coerceAtLeast(0) }, modifier = Modifier.size(32.dp)) { Icon(Icons.Outlined.KeyboardArrowUp, contentDescription = "Previous", tint = accentColor) }
+                                                                    IconButton(onClick = { currentIdx = (currentIdx + 1).coerceAtMost(totalMatches - 1) }, modifier = Modifier.size(32.dp)) { Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = "Next", tint = accentColor) }
+                                                                }
+                                                            }
+                                                            if (currentIdx in matches.indices) {
+                                                                val idx = matches[currentIdx]
+                                                                editorTextFieldValue = TextFieldValue(text = sourceText, selection = TextRange(idx, idx + findQuery.length))
+                                                            }
+                                                            if (isReplace) {
+                                                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                                                                    OutlinedButton(onClick = {
+                                                                        if (currentIdx in matches.indices) {
+                                                                            val idx = matches[currentIdx]
+                                                                            if (sourceText.substring(idx, idx + findQuery.length) == findQuery) {
+                                                                                val newText = sourceText.substring(0, idx) + replaceQuery + sourceText.substring(idx + findQuery.length)
+                                                                                onContentChange(newText)
+                                                                                editorTextFieldValue = TextFieldValue(text = newText, selection = TextRange(idx + replaceQuery.length))
+                                                                                showFindDialog = false
+                                                                            }
+                                                                        }
+                                                                    }, enabled = currentIdx in matches.indices, modifier = Modifier.weight(1f)) { Text("Replace", fontSize = 12.sp) }
+                                                                    Button(onClick = {
+                                                                        if (findQuery.isNotBlank()) {
+                                                                            val newText = sourceText.replace(findQuery, replaceQuery)
+                                                                            onContentChange(newText)
+                                                                            editorTextFieldValue = TextFieldValue(text = newText, selection = TextRange(newText.length))
+                                                                            showFindDialog = false
+                                                                        }
+                                                                    }, enabled = findQuery.isNotBlank() && totalMatches > 0, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = accentColor)) { Text("Replace All", fontSize = 12.sp) }
+                                                                }
+                                                            }
+                                                        } else if (findQuery.isNotBlank()) {
+                                                            Text("No matches", fontSize = 12.sp, color = Color.Red.copy(alpha = 0.7f))
+                                                        }
+                                                    }
+                                                },
+                                                confirmButton = { TextButton(onClick = { showFindDialog = false }) { Text("Done") } }
+                                            )
+                                        }
+
+                                        if (showGoToDialog) {
+                                            var pageNum by remember { mutableStateOf("") }
+                                            val pages = draftContent.split("\u000C")
+                                            val currentPos = editorTextFieldValue.selection.start
+                                            var offsetAccum = 0
+                                            val currentPage = pages.indexOfFirst { offsetAccum += it.length + 1; currentPos < offsetAccum }.let { if (it == -1) 0 else it } + 1
+                                            AlertDialog(
+                                                onDismissRequest = { showGoToDialog = false },
+                                                title = { Text("Go To Page", fontWeight = FontWeight.Bold) },
+                                                text = {
+                                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                        Text("Page $currentPage of ${pages.size}", fontSize = 13.sp, color = Color.Gray)
+                                                        OutlinedTextField(
+                                                            value = pageNum,
+                                                            onValueChange = { pageNum = it.filter { c -> c.isDigit() } },
+                                                            label = { Text("Page number") },
+                                                            singleLine = true,
+                                                            modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp),
+                                                            textStyle = TextStyle(fontSize = 14.sp)
+                                                        )
+                                                        Button(
+                                                            onClick = {
+                                                                val p = pageNum.toIntOrNull()
+                                                                if (p != null && p in 1..pages.size) {
+                                                                    var off = 0
+                                                                    for (i in 0 until p - 1) off += pages[i].length + 1
+                                                                    editorTextFieldValue = TextFieldValue(text = draftContent, selection = TextRange(off))
+                                                                    showGoToDialog = false
+                                                                }
+                                                            },
+                                                            enabled = pageNum.toIntOrNull()?.let { it in 1..pages.size } == true,
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            colors = ButtonDefaults.buttonColors(containerColor = if (selectedDoc.type == "word") DocWordColor else if (selectedDoc.type == "sheet") DocSheetColor else DocSlideColor)
+                                                        ) { Text("Go To") }
+                                                    }
+                                                },
+                                                dismissButton = { TextButton(onClick = { showGoToDialog = false }) { Text("Cancel") } }
+                                            )
+                                        }
+
+                                        if (showStyleManager) {
+                                            val accentCol = if (selectedDoc.type == "word") DocWordColor else if (selectedDoc.type == "sheet") DocSheetColor else DocSlideColor
+                                            AlertDialog(
+                                                onDismissRequest = { showStyleManager = false },
+                                                title = { Text("Style Manager", fontWeight = FontWeight.Bold) },
+                                                text = {
+                                                    LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 400.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                        items(textStyles.size) { idx ->
+                                                            val st = textStyles[idx]
+                                                            Card(
+                                                                modifier = Modifier.fillMaxWidth().clickable {
+                                                                    editingStyleIndex = idx
+                                                                    editingStyleName = st.name
+                                                                    editingStyleFontSize = st.fontSize
+                                                                    editingStyleBold = st.isBold
+                                                                    editingStyleItalic = st.isItalic
+                                                                    editingStyleUnderline = st.isUnderline
+                                                                    editingStyleColor = st.color ?: "#000000"
+                                                                    editingStyleAlignment = st.alignment ?: "left"
+                                                                    editingStyleLineSpacing = (st.lineSpacing ?: 1.0f).toString()
+                                                                    showStyleEditor = true
+                                                                },
+                                                                shape = RoundedCornerShape(8.dp),
+                                                                colors = CardDefaults.cardColors(containerColor = if (isSystemInDarkTheme()) Color(0xFF2B2B30) else Color(0xFFF7F8FA))
+                                                            ) {
+                                                                Row(modifier = Modifier.padding(12.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                                                    Column(modifier = Modifier.weight(1f)) {
+                                                                        Text(st.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                                                        Text("Size: ${st.fontSize} | Bold: ${if (st.isBold) "Yes" else "No"} | Italic: ${if (st.isItalic) "Yes" else "No"}", fontSize = 11.sp, color = Color.Gray)
+                                                                    }
+                                                                    if (!st.isDefault) {
+                                                                        IconButton(onClick = {
+                                                                            textStyles = textStyles.toMutableList().apply { removeAt(idx) }
+                                                                        }) {
+                                                                            Icon(Icons.Outlined.Delete, contentDescription = "Delete", tint = Color.Red.copy(alpha = 0.7f))
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                        item {
+                                                            OutlinedButton(
+                                                                onClick = {
+                                                                    val newName = "Style ${textStyles.size + 1}"
+                                                                    textStyles = textStyles + DocTextStyle(newName, isDefault = false)
+                                                                },
+                                                                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                                                                colors = ButtonDefaults.outlinedButtonColors(contentColor = accentCol)
+                                                            ) { Text("+ Add New Style") }
+                                                        }
+                                                    }
+                                                },
+                                                confirmButton = { TextButton(onClick = { showStyleManager = false }) { Text("Done") } }
+                                            )
+                                        }
+
+                                        if (showStyleEditor) {
+                                            val accentCol = if (selectedDoc.type == "word") DocWordColor else if (selectedDoc.type == "sheet") DocSheetColor else DocSlideColor
+                                            AlertDialog(
+                                                onDismissRequest = { showStyleEditor = false },
+                                                title = { Text("Edit Style", fontWeight = FontWeight.Bold) },
+                                                text = {
+                                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                                        OutlinedTextField(value = editingStyleName, onValueChange = { editingStyleName = it }, label = { Text("Style Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            Text("Size: ", fontSize = 14.sp, modifier = Modifier.width(50.dp))
+                                                            Slider(value = editingStyleFontSize.toFloat(), onValueChange = { editingStyleFontSize = it.toInt() }, valueRange = 8f..72f, modifier = Modifier.weight(1f))
+                                                            Text("${editingStyleFontSize}", fontSize = 12.sp, modifier = Modifier.width(30.dp), textAlign = TextAlign.Center)
+                                                        }
+                                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                                            FilterChip(selected = editingStyleBold, onClick = { editingStyleBold = !editingStyleBold }, label = { Text("B") }, leadingIcon = { if (editingStyleBold) Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) })
+                                                            FilterChip(selected = editingStyleItalic, onClick = { editingStyleItalic = !editingStyleItalic }, label = { Text("I") }, leadingIcon = { if (editingStyleItalic) Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) })
+                                                            FilterChip(selected = editingStyleUnderline, onClick = { editingStyleUnderline = !editingStyleUnderline }, label = { Text("U") }, leadingIcon = { if (editingStyleUnderline) Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) })
+                                                        }
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            Text("Color: ", fontSize = 14.sp, modifier = Modifier.width(50.dp))
+                                                            Box(modifier = Modifier.size(32.dp).clip(RoundedCornerShape(4.dp)).background(editingStyleColor.let { try { Color(android.graphics.Color.parseColor(it)) } catch (e: Exception) { Color.Gray } }).clickable {
+                                                                val hex = editingStyleColor
+                                                                val colors = listOf("#000000", "#FFFFFF", "#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF", "#808080", "#1A1A1A", "#555555", "#666666")
+                                                                val currentIdx = colors.indexOf(hex).coerceAtLeast(0)
+                                                                editingStyleColor = colors[(currentIdx + 1) % colors.size]
+                                                            })
+                                                        }
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            Text("Spacing: ", fontSize = 14.sp, modifier = Modifier.width(60.dp))
+                                                            Slider(value = (editingStyleLineSpacing.toFloatOrNull() ?: 1.0f), onValueChange = { editingStyleLineSpacing = "%.1f".format(it) }, valueRange = 0.5f..3.0f, modifier = Modifier.weight(1f))
+                                                            Text("${editingStyleLineSpacing}x", fontSize = 12.sp, modifier = Modifier.width(40.dp), textAlign = TextAlign.Center)
+                                                        }
+                                                    }
+                                                },
+                                                confirmButton = {
+                                                    TextButton(onClick = {
+                                                        val idx = editingStyleIndex
+                                                        if (idx in textStyles.indices) {
+                                                            val updated = textStyles.toMutableList()
+                                                            updated[idx] = textStyles[idx].copy(
+                                                                name = editingStyleName,
+                                                                fontSize = editingStyleFontSize,
+                                                                isBold = editingStyleBold,
+                                                                isItalic = editingStyleItalic,
+                                                                isUnderline = editingStyleUnderline,
+                                                                color = editingStyleColor,
+                                                                lineSpacing = editingStyleLineSpacing.toFloatOrNull()
+                                                            )
+                                                            textStyles = updated
+                                                        }
+                                                        showStyleEditor = false
+                                                    }) { Text("Save") }
+                                                },
+                                                dismissButton = { TextButton(onClick = { showStyleEditor = false }) { Text("Cancel") } }
                                             )
                                         }
 
