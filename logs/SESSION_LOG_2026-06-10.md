@@ -75,3 +75,52 @@ The oscillation guard only locked merge-back AFTER a merge-back, not after a SPL
 4. If merged content overflows → split fires again → **oscillation**: no new page persists, content appears "stuck"
 
 **Fix** (`DocEditorScreen.kt:5232`): Added `mergeBackLocked = true` at the end of the split `LaunchedEffect`, mirroring the merge-back LaunchedEffect. Merge-back now requires explicit user edit before it can fire again after a split.
+
+---
+
+### Follow-up — Clipboard actions: Copy, Cut, Paste, and History
+
+#### Goal
+Make the clipboard actions in the Home ribbon functional and add clipboard history.
+
+#### Changes
+
+**System clipboard integration** (`executeRibbonAction`, ~line 1099):
+- Added `context: Context` parameter to access `ClipboardManager`.
+- Added `onHistoryAdd: ((String) -> Unit)?` callback for tracking clipboard entries.
+
+**Copy handler** — Gets selected text from `draftContent` using `editorTextFieldValue.selection`, wraps it in `ClipData.newPlainText()`, and calls `clipboard.setPrimaryClip(clip)`.
+
+**Cut handler** — Same copy logic, then removes selected text from `draftContent`, calls `onContentChange()`, and resets cursor to the cut position.
+
+**Paste handler** — Reads `clipboard.primaryClip?.getItemAt(0)?.text`, inserts at cursor position (replacing any selection), moves cursor to end of pasted text.
+
+**`paste_special`** — Same as paste (all content is plain text in this app).
+
+**`showToast` fix** — Was a no-op; now calls `Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()`.
+
+**Clipboard group UI** (`WorkspacePane`, ~line 3165):
+- Reduced to 4 equal-width cards: **Cut**, **Copy**, **Paste**, **History**.
+- Cards use `Modifier.weight(1f)` with 84dp height, rounded corners, accent color icons.
+- Buttons call `onAction("cut"/"copy"/"paste")` or set `showClipboardHistory = true`.
+- Icons: Cut=`ContentCut` (scissors), Copy=`ContentCopy` (two documents), Paste=`ContentPaste` (clipboard), History=`History` (clock).
+
+**Clipboard History** (`WorkspacePane`, ~line 2098):
+- `clipboardHistory: SnapshotStateList<String>` — per-session state, lost on app close.
+- `showClipboardHistory: MutableState<Boolean>` — dialog visibility.
+- History button sets `showClipboardHistory = true`.
+- **Dialog** (`AlertDialog` at ~line 3663):
+  - Shows reversed list of entries in a scrollable `Column`.
+  - Each entry is a `TextButton` showing up to 80 chars.
+  - Tap an entry to paste it at cursor position (replaces any selection).
+  - **Clear All** button empties history.
+  - **Close** button dismisses dialog.
+- Copy and Cut handlers call `onHistoryAdd(selectedText)` to record entries.
+
+#### Verification
+- `gradlew :app:compileDebugKotlin` — success
+- `gradlew :app:assembleDebug` — success
+- Installed via adb on device `G6IR4565CANRLVX4`
+- Commits:
+  - `e21833a` — Add clipboard history dialog with paste-on-tap, clear all support
+  - `beaff3d` — Fix clipboard action icons: ContentCut, ContentCopy, ContentPaste, History

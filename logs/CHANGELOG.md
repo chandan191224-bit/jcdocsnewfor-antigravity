@@ -78,3 +78,24 @@ Added Color Picker dialog for font color/highlight, fixed icon highlighting not 
 - `app/src/main/java/com/example/ui/DocEditorScreen.kt`
 - `logs/CHANGELOG.md`
 - `logs/SESSION_LOG_2026-06-10.md`
+
+## Session 4 — 2026-06-10 (clipboard actions)
+
+### Summary
+Made clipboard actions (Cut, Copy, Paste) fully functional with system clipboard integration, added per-session clipboard history with paste-from-history dialog, and fixed clipboard UI icons to match MS Word.
+
+### Changes Made
+1. **System clipboard integration** — added `ClipboardManager`/`ClipData` imports; added `context: Context` parameter to `executeRibbonAction`.
+2. **Copy** — copies selected text to system clipboard via `setPrimaryClip()`.
+3. **Cut** — copies selected text to clipboard, removes it from document, updates cursor.
+4. **Paste** — reads `primaryClip`, inserts at cursor/selection, moves cursor to end.
+5. **`paste_special`** — reuses same paste logic (plain text only).
+6. **Toast fix** — `showToast` now calls `Toast.makeText().show()` instead of doing nothing.
+7. **Clipboard group simplified** — removed Special/Paint Style buttons; 4 equal cards: Cut, Copy, Paste, History.
+8. **Clipboard history** — `mutableStateListOf<String>` + dialog with `Column(verticalScroll)`, tap-to-paste at cursor position, Clear All button.
+9. **Icons fixed** — Cut: `ContentCut` (scissors), Copy: `ContentCopy` (two docs), Paste: `ContentPaste` (clipboard), History: `History` (clock).
+
+### Files Modified
+- `app/src/main/java/com/example/ui/DocEditorScreen.kt`
+- `logs/CHANGELOG.md`
+- `logs/SESSION_LOG_2026-06-10.md`
