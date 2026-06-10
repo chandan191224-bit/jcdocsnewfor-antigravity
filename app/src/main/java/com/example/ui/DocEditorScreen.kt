@@ -5589,31 +5589,17 @@ class RichTextVisualTransformation(private val spans: List<DocFormatSpan>, priva
                 when (span.type) {
                     "alignment", "lineSpacing" -> {
                         android.util.Log.d("AlignDebug", "RichTextTransform: type=${span.type}, span=[${span.start},${span.end}), value=${span.value}, absOff=$absoluteOffset, rel=[$relStart,$relEnd), textLen=$chunkLength")
-                        // Iterate through ALL paragraphs within the span's range,
-                        // not just the first one (spans can cover multiple paragraphs
-                        // when alignment is applied to non-first paragraphs).
-                        var paraCurrentPos = relStart
-                        while (paraCurrentPos < relEnd) {
-                            val paraStart = text.text.lastIndexOf('\n', maxOf(0, paraCurrentPos - 1)) + 1
-                            val nextNewline = text.text.indexOf('\n', paraCurrentPos)
-                            if (nextNewline == -1 || nextNewline >= relEnd) {
-                                // Last paragraph (or only paragraph) — extends to relEnd
-                                if (paraStart < relEnd) {
-                                    val key = "$paraStart-$relEnd"
-                                    paraProps.getOrPut(key) { mutableMapOf() }[span.type] = span.value
-                                    android.util.Log.d("AlignDebug", "RichTextTransform:   lastPara key=$key, type=${span.type}=${span.value}")
-                                }
-                                break
-                            }
-                            // Include trailing newline in the paragraph style range so Compose
-                            // doesn't create a gap (which can cause extra paragraph spacing)
-                            val paraEnd = nextNewline + 1
-                            if (paraStart < paraEnd) {
+                        val paraRangesInPage = getParagraphRangesInRange(text.text, relStart, relEnd.coerceAtLeast(relStart))
+                        for (r in paraRangesInPage) {
+                            val paraStart = r.start
+                            val paraEnd = r.endInclusive + 1
+                            if (paraStart >= 0 && paraEnd <= chunkLength && paraStart < paraEnd) {
                                 val key = "$paraStart-$paraEnd"
                                 paraProps.getOrPut(key) { mutableMapOf() }[span.type] = span.value
-                                android.util.Log.d("AlignDebug", "RichTextTransform:   interPara key=$key, type=${span.type}=${span.value}")
+                                android.util.Log.d("AlignDebug", "RichTextTransform:   paraRange key=$key, type=${span.type}=${span.value}")
+                            } else {
+                                android.util.Log.e("AlignDebug", "RichTextTransform:   INVALID paraRange=[$paraStart,$paraEnd)")
                             }
-                            paraCurrentPos = paraEnd
                         }
                     }
                 }
