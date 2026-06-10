@@ -31,6 +31,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextDecoration
@@ -2933,7 +2936,7 @@ fun WorkspacePane(
                                 )
                             }
 
-                            if (activeRibbonTab == "AI Assistant") {
+                            if (activeRibbonTab == "AI") {
                                 AIChatPanel(
                                     onClose = { isRibbonExpanded = false },
                                     viewModel = viewModel,
@@ -4382,33 +4385,46 @@ fun WorkspacePane(
                         } // End of AnimatedVisibility Column
                     } // End of AnimatedVisibility
 
+                    val ribbonTabs = listOf(
+                        Triple("Home", Icons.Outlined.Home, "ribbon_tab_Home"),
+                        Triple("Insert", Icons.Outlined.NoteAdd, "ribbon_tab_Insert"),
+                        Triple("AI", Icons.Outlined.AutoAwesome, "ribbon_tab_AI"),
+                        Triple("Layout", Icons.Outlined.ViewQuilt, "ribbon_tab_Layout"),
+                        Triple("Review", Icons.Outlined.RateReview, "ribbon_tab_Review")
+                    )
+
+                    val selectedColor = if (selectedDoc.type == "word") DocWordColor
+                        else if (selectedDoc.type == "sheet") DocSheetColor
+                        else DocSlideColor
+
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(bottomNavBarHeight)
-                            .background(if (isDarkTheme) Color(0xFF16161A) else Color.White)
-                            .border(width = 0.5.dp, color = glassCardBorderColor)
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceAround,
+                            .height(bottomNavBarHeight + 4.dp)
+                            .background(if (isDarkTheme) Color(0xFF1A1C20) else Color(0xFFFAFBFF))
+                            .drawBehind {
+                                drawLine(
+                                    color = if (isDarkTheme) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f),
+                                    start = Offset(0f, size.height),
+                                    end = Offset(size.width, size.height),
+                                    strokeWidth = 1f
+                                )
+                            },
+                        horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val ribbonTabs = listOf(
-                            Triple("Home", Icons.Outlined.Home, "ribbon_tab_Home"),
-                            Triple("Insert", Icons.Outlined.Add, "ribbon_tab_Insert"),
-                            Triple("AI Assistant", Icons.Outlined.Star, "ribbon_tab_AIAssistant"),
-                            Triple("Layout", Icons.Outlined.Settings, "ribbon_tab_Layout"),
-                            Triple("Review", Icons.Outlined.Check, "ribbon_tab_Review")
-                        )
-
                         ribbonTabs.forEach { (tabName, icon, tag) ->
                             val isSelected = activeRibbonTab == tabName && isRibbonExpanded
+                            val tabTint = if (isSelected) selectedColor
+                                else (if (isDarkTheme) Color.LightGray.copy(alpha = 0.6f) else Color.Gray)
+
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.Center,
                                 modifier = Modifier
                                     .weight(1f)
                                     .fillMaxHeight()
-                                    .clip(RoundedCornerShape(8.dp))
+                                    .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
                                     .clickable {
                                         if (activeRibbonTab == tabName && isRibbonExpanded) {
                                             isRibbonExpanded = false
@@ -4418,28 +4434,38 @@ fun WorkspacePane(
                                         }
                                     }
                                     .testTag(tag)
-                                    .padding(vertical = 4.dp)
+                                    .drawBehind {
+                                        if (isSelected) {
+                                            drawRoundRect(
+                                                color = selectedColor.copy(alpha = 0.1f),
+                                                cornerRadius = CornerRadius(8.dp.toPx(), 8.dp.toPx()),
+                                                topLeft = Offset.Zero,
+                                                size = size
+                                            )
+                                            drawRect(
+                                                color = selectedColor,
+                                                topLeft = Offset(0f, size.height - 3.dp.toPx()),
+                                                size = Size(size.width, 3.dp.toPx())
+                                            )
+                                        }
+                                    }
+                                    .padding(horizontal = 2.dp)
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(16.dp))
-                                        .background(if (isSelected) (if (selectedDoc.type == "word") DocWordColor.copy(alpha = 0.15f) else if (selectedDoc.type == "sheet") DocSheetColor.copy(alpha = 0.15f) else DocSlideColor.copy(alpha = 0.15f)) else Color.Transparent)
-                                        .padding(horizontal = 14.dp, vertical = 4.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = icon,
-                                        contentDescription = "Ribbon tab $tabName",
-                                        tint = if (isSelected) (if (selectedDoc.type == "word") DocWordColor else if (selectedDoc.type == "sheet") DocSheetColor else DocSlideColor) else (if (isDarkTheme) Color.LightGray else Color.Gray),
-                                        modifier = Modifier.size(22.dp)
-                                    )
-                                }
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = "Ribbon tab $tabName",
+                                    tint = tabTint,
+                                    modifier = Modifier.size(22.dp)
+                                )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = tabName,
                                     fontSize = 10.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isSelected) (if (selectedDoc.type == "word") DocWordColor else if (selectedDoc.type == "sheet") DocSheetColor else DocSlideColor) else (if (isDarkTheme) Color.LightGray else Color.Gray)
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis,
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                                    color = tabTint
                                 )
                             }
                         }
@@ -5195,9 +5221,9 @@ fun EmptyWorkspaceState(
             ) {
                 val items = listOf(
                     Triple(Icons.Outlined.Home, "Home", "home"),
-                    Triple(Icons.Outlined.FolderOpen, "Files", "files"),
+                    Triple(Icons.Outlined.Folder, "Files", "files"),
                     Triple(Icons.Outlined.People, "Shared", "shared"),
-                    Triple(Icons.Outlined.Tune, "Settings", "settings")
+                    Triple(Icons.Outlined.Settings, "Settings", "settings")
                 )
                 items.forEach { (icon, label, tabId) ->
                     val selected = activeTab == tabId
